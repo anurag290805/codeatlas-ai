@@ -5,21 +5,21 @@
       "framework": "vite"
     },
     "backend": {
-      "root": "backend"
+      "root": "backend",
+      "entrypoint": "app/main.py",
+      "framework": "fastapi"
     }
   },
   "rewrites": [
     {
       "source": "/api(/.*)?",
       "destination": {
-        "type": "service",
         "service": "backend"
       }
     },
     {
       "source": "/(.*)",
       "destination": {
-        "type": "service",
         "service": "frontend"
       }
     }
