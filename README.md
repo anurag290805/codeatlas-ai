@@ -92,7 +92,9 @@ py -3.11 -m venv backend\.venv
 backend\.venv\Scripts\Activate.ps1
 ```
 
-Install Ollama separately, then start it and pull the configured model:
+Ollama is optional for startup and is only required when using AI query
+generation. If you want query generation locally, install Ollama separately,
+then start it and pull the configured model:
 
 ```bash
 ollama serve
@@ -120,16 +122,27 @@ Important variables:
 | `CHROMA_DB_PATH` | `./data/chroma` | ChromaDB persistence path. |
 | `LOG_LEVEL` | `INFO` | Application log level. |
 
+The backend loads the repository-root `.env` first, then `backend/.env`; the
+backend-local file wins when both define a value, and shell environment
+variables override both. Relative database, repository, vector-store, graph,
+and log paths resolve from the repository root. `CHROMA_DB_PATH` and
+`CHROMA_PERSIST_DIRECTORY` are aliases, as are `OLLAMA_HOST` and
+`OLLAMA_BASE_URL`.
+
 Do not commit `.env` files, credentials, databases, vector stores, or model caches.
 
 ## Running the Backend
 
 ```bash
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+source .venv/bin/activate
+DEBUG=true python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The API is available at `http://localhost:8000`.
+The API is available at `http://localhost:8000`. The lightweight health and
+version endpoints are `GET /health` and `GET /version`; API routers use the
+`/api` prefix. Ollama does not need to be running for these endpoints or for
+backend startup.
 
 ## Docker Usage
 
@@ -232,6 +245,56 @@ pytest --cov=backend/app --cov-report=term-missing
 
 Tests should isolate Ollama, embedding, vector-store, filesystem, and Git operations with deterministic fixtures or mocks.
 
+## Frontend Development
+
+The frontend is a Vite + React 19 application using TypeScript, React
+Router, TanStack Query, Tailwind CSS, Recharts, and React Flow.
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Frontend environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Backend origin. |
+| `VITE_API_PREFIX` | `/api` | FastAPI router prefix. |
+
+The API client applies the prefix consistently, while system endpoints such
+as `/health` remain on the backend origin. Never place secrets in Vite
+environment variables; values prefixed with `VITE_` are shipped to browsers.
+
+## Production Deployment
+
+Build the static frontend with:
+
+```bash
+cd frontend
+npm run build
+npm run preview
+```
+
+The generated `frontend/dist` directory can be served by any static host.
+For Vercel or Netlify, use `frontend` as the project root, `npm run build` as
+the build command, and `dist` as the publish directory. Configure
+`VITE_API_BASE_URL` and `VITE_API_PREFIX` in the host's environment settings.
+The backend must allow the deployed frontend origin through CORS.
+
+For Docker Compose, run `docker compose up --build` from the repository root.
+The backend remains responsible for Ollama, SQLite, ChromaDB, and indexing;
+the frontend is a separately deployable static application.
+
+## Screenshots
+
+Screenshots can be added under `docs/screenshots/` and referenced here as the
+dashboard, repository workspace, AI chat, dependency graph, and analytics
+views mature. The application is designed for dark and light themes and
+responsive desktop/tablet layouts.
+
 ## Design Principles
 
 - Local-first AI with no required paid provider.
@@ -252,6 +315,9 @@ Tests should isolate Ollama, embedding, vector-store, filesystem, and Git operat
 - Improve interactive graph visualization.
 - Add multi-user workspaces and access controls.
 - Add metrics, tracing, and production deployment manifests.
+- Add a dedicated backend search endpoint for global file and symbol search.
+- Add a dedicated analytics endpoint for commit, storage, and processing history.
+- Add end-to-end browser tests and visual regression coverage.
 
 ## License
 

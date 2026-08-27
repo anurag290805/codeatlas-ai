@@ -1,69 +1,173 @@
-// src/pages/Repository.tsx
-import { FolderTree, MessageSquare, Network, PanelsTopLeft } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { AlertCircle, ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { FileExplorer } from "@/components/repository/FileExplorer";
+import { RepositoryHeader } from "@/components/repository/RepositoryHeader";
+import { RepositoryOverview } from "@/components/repository/RepositoryOverview";
+import { RepositoryStats } from "@/components/repository/RepositoryStats";
+import { useRepository, useRepositoryFile, useRepositoryFileTree } from "@/hooks/useRepository";
+import type {
+  Repository,
+  RepositoryDetailResponse,
+  RepositoryProcessingStatus,
+} from "@/types/repository";
 
-/**
- * Repository workspace page. Composes the panels a user will use to
- * explore a single repository (overview, file explorer, AI chat, and
- * dependency graph). Panel content is implemented in a later milestone.
- */
+function repositoryName(data: RepositoryDetailResponse): string {
+  const value = data.repository_name.trim();
+  if (!value.startsWith("https://github.com/")) return value;
+  return value.replace("https://github.com/", "").replace(/\.git\/?$/, "").replace(/\/$/, "");
+}
+
+function repositoryOwner(data: RepositoryDetailResponse): string {
+  if (data.owner?.trim()) return data.owner;
+  return repositoryName(data).split("/")[0] ?? "GitHub";
+}
+
+function processingStatus(status: RepositoryDetailResponse["status"]): RepositoryProcessingStatus {
+  // Backend uses: ready, indexing, index_failed, failed_import, pending
+  // Frontend uses: ready, pending, cloning, parsing, embedding, failed
+  switch (status) {
+    case "ready":
+    case "indexed":
+      return "ready";
+    case "indexing":
+    case "cloning":
+    case "parsing":
+    case "embedding":
+      return "pending";
+    case "index_failed":
+    case "failed_import":
+    case "failed":
+      return "failed";
+    default:
+      return "pending";
+  }
+}
+
+function toRepository(data: RepositoryDetailResponse): Repository {
+  const branches = data.branches ?? [];
+  const statistics = data.statistics ?? {
+    fileCount: data.files_indexed,
+    directoryCount: data.directory_count ?? null,
+    commitCount: data.commit_count ?? null,
+    contributorCount: data.contributor_count ?? null,
+    languageCount: data.language_count ?? null,
+    branchCount: data.branch_count ?? (branches.length > 0 ? branches.length : null),
+    chunkCount: data.chunks_generated,
+    embeddingCount: data.embeddings_generated,
+  };
+
+  return {
+    id: String(data.id),
+    name: repositoryName(data),
+    fullName: repositoryName(data),
+    description: data.description ?? undefined,
+    owner: repositoryOwner(data),
+    url: data.url,
+    htmlUrl: data.url,
+    isPrivate: data.visibility === "private",
+    defaultBranch: data.default_branch,
+    branches,
+    status: processingStatus(data.status),
+    primaryLanguage: data.primary_language ?? undefined,
+    sizeBytes: data.metrics?.sizeBytes ?? 0,
+    statistics,
+    metrics: data.metrics,
+    createdAt: data.created_at ?? undefined,
+    updatedAt: data.last_indexed_at ?? data.created_at ?? "",
+    lastIndexedAt: data.last_indexed_at ?? undefined,
+  };
+}
+
 export function Repository() {
+  const { repositoryId } = useParams<{ repositoryId: string }>();
+  const [searchParams] = useSearchParams();
+  const repositoryQuery = useRepository(repositoryId);
+  const treeQuery = useRepositoryFileTree(repositoryId);
+  const [selection, setSelection] = useState<{ repositoryId: string; path?: string }>({
+    repositoryId: repositoryId ?? "",
+    path: searchParams.get("file") ?? undefined,
+  });
+  const selectedPath = selection.repositoryId === repositoryId ? selection.path : undefined;
+  const fileQuery = useRepositoryFile(repositoryId, selectedPath);
+
+  const repository = useMemo(
+    () => (repositoryQuery.data ? toRepository(repositoryQuery.data) : undefined),
+    [repositoryQuery.data],
+  );
+  const fileTree = treeQuery.data ?? repositoryQuery.data?.files ?? [];
+
+  if (repositoryQuery.isLoading) {
+    return (
+      <div className="flex min-h-[32rem] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading repository workspace…
+      </div>
+    );
+  }
+
+  if (repositoryQuery.isError || !repository) {
+    return (
+      <Card>
+        <CardContent className="flex min-h-[20rem] flex-col items-center justify-center gap-3 text-center">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+          <div>
+            <p className="font-medium">Unable to load this repository</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The repository may not exist or is unavailable right now.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => void repositoryQuery.refetch()} className="gap-1.5">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Try again
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Repository Workspace</h1>
-        <p className="text-sm text-muted-foreground">
-          Explore structure, files, and dependencies for this repository.
-        </p>
+      <Breadcrumb repositoryName={repository.name} filePath={selectedPath} />
+
+      <div className="flex items-center justify-between gap-3">
+        <Button variant="ghost" size="sm" render={<Link to="/repositories" />} className="gap-1.5">
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Repositories
+        </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 space-y-0">
-            <PanelsTopLeft className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">Repository Overview</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription>Summary, language breakdown, and metadata.</CardDescription>
-          </CardContent>
-        </Card>
+      <RepositoryHeader
+        repository={repository}
+        onRefresh={() => void repositoryQuery.refetch()}
+        isRefreshing={repositoryQuery.isFetching}
+      />
 
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 space-y-0">
-            <FolderTree className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">File Explorer</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription>Browse the repository's file tree.</CardDescription>
-          </CardContent>
-        </Card>
+      <RepositoryOverview repository={repository} />
+      <RepositoryStats stats={repository.statistics!} />
 
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 space-y-0">
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">AI Chat</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription>Ask questions about this codebase.</CardDescription>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 space-y-0">
-            <Network className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">Dependency Graph</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription>Visualize module and file dependencies.</CardDescription>
-          </CardContent>
-        </Card>
-      </div>
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">Files</h2>
+          <p className="text-sm text-muted-foreground">
+            Browse the indexed repository and inspect source files in read-only mode.
+          </p>
+        </div>
+        <FileExplorer
+          fileTree={[...fileTree]}
+          selectedPath={selectedPath}
+          selectedFile={fileQuery.data ?? null}
+          isFileLoading={fileQuery.isLoading}
+          fileError={fileQuery.error}
+          onFileSelect={(path) => setSelection({ repositoryId: repositoryId ?? "", path })}
+          className="h-[42rem]"
+        />
+      </section>
     </div>
   );
 }
+
+export default Repository;

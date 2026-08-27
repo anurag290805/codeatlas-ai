@@ -28,7 +28,7 @@ const importRepositorySchema = z.object({
     .min(1, "A repository URL is required.")
     .url("Enter a valid URL.")
     .regex(
-      /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/,
+      /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+(?:\.git)?\/?$/,
       "Enter a valid GitHub repository URL, e.g. https://github.com/owner/repo.",
     ),
 });

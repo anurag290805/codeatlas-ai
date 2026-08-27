@@ -32,9 +32,24 @@ function buildSegments(pathname: string): BreadcrumbSegment[] {
  * represents the current page and is rendered as plain text rather
  * than a link.
  */
-export function Breadcrumb() {
+interface BreadcrumbProps {
+  repositoryName?: string;
+  filePath?: string;
+}
+
+export function Breadcrumb({ repositoryName, filePath }: BreadcrumbProps) {
   const { pathname } = useLocation();
-  const segments = buildSegments(pathname);
+  const segments = repositoryName
+    ? [
+        { label: repositoryName, path: pathname },
+        ...(filePath
+          ? filePath.split("/").map((part, index, parts) => ({
+              label: humanize(part),
+              path: `${pathname}?file=${encodeURIComponent(parts.slice(0, index + 1).join("/"))}`,
+            }))
+          : []),
+      ]
+    : buildSegments(pathname);
 
   return (
     <nav aria-label="Breadcrumb" className="flex items-center">

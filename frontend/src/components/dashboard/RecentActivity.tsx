@@ -41,7 +41,7 @@ const ACTIVITY_ICONS: Record<ActivityType, LucideIcon> = {
  * Displays a chronological feed of recent repository activity. Purely
  * presentational — the activity list is supplied via props.
  *
- * `ActivityItem` is defined here as a temporary placeholder and
+ * `ActivityItem` is defined here as the dashboard activity projection and
  * should move to `src/types` once shared domain types exist.
  */
 export function RecentActivity({ activities, className }: RecentActivityProps) {

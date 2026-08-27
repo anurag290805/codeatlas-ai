@@ -1,6 +1,7 @@
 // src/hooks/useQuery.ts
 import { useMutation } from "@tanstack/react-query";
 import { QueryApi } from "@/api/query";
+import type { QueryRequest, QueryResponse } from "@/types/query";
 
 /**
  * Executes AI repository queries. Thin wrapper around TanStack
@@ -10,9 +11,9 @@ import { QueryApi } from "@/api/query";
  * Named `useRepositoryQuery` (rather than `useQuery`) to avoid
  * shadowing TanStack Query's own `useQuery` export at call sites.
  */
-export function useRepositoryQuery<TPayload = unknown, TResponse = unknown>() {
+export function useRepositoryQuery() {
   return useMutation({
-    mutationFn: (payload: TPayload) =>
-      QueryApi.queryRepository<TPayload, TResponse>(payload).then((response) => response.data),
+    mutationFn: (payload: QueryRequest): Promise<QueryResponse> =>
+      QueryApi.queryRepository(payload).then((response) => response.data),
   });
 }

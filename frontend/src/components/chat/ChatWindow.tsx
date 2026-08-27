@@ -4,7 +4,8 @@ import { ArrowDown, MessagesSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { MessageBubble } from "@/components/chat/MessageBubble";
-import { ChatInput } from "@/components/chat/ChatInput";
+import { AIComposer } from "@/components/chat/AIComposer";
+import { ChatEmptyState } from "@/components/chat/ChatEmptyState";
 import type { ChatMessage, Citation } from "@/types";
 
 interface ChatWindowProps {
@@ -16,6 +17,8 @@ interface ChatWindowProps {
   onOpenCitation?: (citation: Citation) => void;
   emptyStateTitle?: string;
   emptyStateDescription?: string;
+  emptyStateRepositoryName?: string;
+  onSelectPrompt?: (prompt: string) => void;
   className?: string;
 }
 
@@ -43,6 +46,8 @@ export function ChatWindow({
   onOpenCitation,
   emptyStateTitle = "Ask anything about this repository",
   emptyStateDescription = "CodeAtlas AI reads the indexed source to answer with grounded, cited explanations.",
+  emptyStateRepositoryName = "this repository",
+  onSelectPrompt,
   className,
 }: ChatWindowProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -81,7 +86,11 @@ export function ChatWindow({
           className="h-full overflow-y-auto px-4 py-4 sm:px-6"
         >
           {messages.length === 0 ? (
-            <EmptyState title={emptyStateTitle} description={emptyStateDescription} />
+            onSelectPrompt ? (
+              <ChatEmptyState repositoryName={emptyStateRepositoryName} onSelectPrompt={onSelectPrompt} />
+            ) : (
+              <EmptyState title={emptyStateTitle} description={emptyStateDescription} />
+            )
           ) : (
             <div className="mx-auto flex max-w-3xl flex-col gap-5">
               <AnimatePresence initial={false}>
@@ -142,9 +151,14 @@ export function ChatWindow({
 
       <div className="shrink-0 border-t border-border/60 bg-background/80 px-4 py-3 backdrop-blur-sm sm:px-6">
         <div className="mx-auto max-w-3xl">
-          <ChatInput onSubmit={onSubmit} isLoading={isLoading} disabled={disabled} />
+          <AIComposer
+          onSubmit={onSubmit}
+          isLoading={isLoading}
+          disabled={disabled}
+        />
         </div>
       </div>
     </div>
   );
 }
+export default ChatWindow;

@@ -1,5 +1,7 @@
 // src/api/client.ts
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
+import { env } from "@/config/env";
+import { normalizeApiError } from "@/utils/errors";
 
 /**
  * Singleton Axios client used for all backend communication with the
@@ -8,13 +10,20 @@ import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestCo
  * architecture.
  */
 export const apiClient: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
-  timeout: 30000,
+  baseURL: `${env.apiBaseUrl}${env.apiPrefix}` || env.apiPrefix,
+  timeout: 120000,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
   },
   withCredentials: false,
+});
+
+/** System endpoints such as /health live outside the versioned API prefix. */
+export const systemClient: AxiosInstance = axios.create({
+  baseURL: env.apiBaseUrl || undefined,
+  timeout: 10_000,
+  headers: { Accept: "application/json" },
 });
 
 apiClient.interceptors.request.use(
@@ -24,5 +33,10 @@ apiClient.interceptors.request.use(
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => Promise.reject(error),
+  (error: AxiosError) => Promise.reject(normalizeApiError(error)),
+);
+
+systemClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => Promise.reject(normalizeApiError(error)),
 );

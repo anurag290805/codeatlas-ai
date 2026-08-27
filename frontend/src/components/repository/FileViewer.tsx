@@ -8,6 +8,7 @@ import type { RepositoryFile } from "@/types";
 interface FileViewerProps {
   file: RepositoryFile | null;
   isLoading?: boolean;
+  error?: unknown;
   className?: string;
 }
 
@@ -40,6 +41,18 @@ function LoadingState() {
   );
 }
 
+function ErrorState() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-destructive">
+      <FileWarning className="h-8 w-8" />
+      <p className="text-sm font-medium">Unable to load file</p>
+      <p className="max-w-xs text-xs text-muted-foreground">
+        The file contents could not be retrieved from the repository.
+      </p>
+    </div>
+  );
+}
+
 function UnsupportedState({ name }: { name: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
@@ -52,7 +65,7 @@ function UnsupportedState({ name }: { name: string }) {
   );
 }
 
-export function FileViewer({ file, isLoading = false, className }: FileViewerProps) {
+export function FileViewer({ file, isLoading = false, error, className }: FileViewerProps) {
   return (
     <div
       className={cn(
@@ -92,6 +105,16 @@ export function FileViewer({ file, isLoading = false, className }: FileViewerPro
               className="absolute inset-0"
             >
               <LoadingState />
+            </motion.div>
+          ) : error ? (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0"
+            >
+              <ErrorState />
             </motion.div>
           ) : !file ? (
             <motion.div

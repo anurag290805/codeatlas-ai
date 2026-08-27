@@ -16,6 +16,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { formatBytes as formatSharedBytes } from "@/utils/format";
 import type { RepositoryMetricsData } from "@/types/analytics";
 
 export interface RepositoryMetricsProps {
@@ -29,15 +30,12 @@ function formatCompactNumber(value: number): string {
   return new Intl.NumberFormat("en-US", { notation: "compact" }).format(value);
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const exponent = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-  const value = bytes / 1024 ** exponent;
-  return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
+function formatOptionalNumber(value: number | null): string {
+  return value == null ? "—" : formatCompactNumber(value);
+}
+
+function formatOptionalBytes(bytes: number | null): string {
+  return bytes == null ? "Not calculated" : formatSharedBytes(bytes);
 }
 
 interface MetricDefinition {
@@ -58,6 +56,12 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
 }) => {
   const metrics: MetricDefinition[] = [
     {
+      key: "repositories",
+      label: "Repositories",
+      icon: FolderTree,
+      value: formatCompactNumber(data.totalRepositories),
+    },
+    {
       key: "files",
       label: "Total files",
       icon: FileText,
@@ -67,13 +71,13 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       key: "folders",
       label: "Total folders",
       icon: FolderTree,
-      value: formatCompactNumber(data.totalFolders),
+      value: formatOptionalNumber(data.totalFolders),
     },
     {
-      key: "loc",
-      label: "Lines of code",
+      key: "symbols",
+      label: "Total symbols",
       icon: Code2,
-      value: formatCompactNumber(data.linesOfCode),
+      value: formatOptionalNumber(data.totalSymbols),
     },
     {
       key: "languages",
@@ -97,13 +101,25 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       key: "nodes",
       label: "Dependency nodes",
       icon: Waypoints,
-      value: formatCompactNumber(data.dependencyNodes),
+      value: formatOptionalNumber(data.dependencyNodes),
     },
     {
       key: "size",
       label: "Repository size",
       icon: HardDrive,
-      value: formatBytes(data.repositorySizeBytes),
+      value: formatOptionalBytes(data.repositorySizeBytes),
+    },
+    {
+      key: "processing",
+      label: "Indexed",
+      icon: Sparkles,
+      value: `${formatCompactNumber(data.indexedRepositories)}/${formatCompactNumber(data.totalRepositories)}`,
+    },
+    {
+      key: "failed",
+      label: "Failed processing",
+      icon: Waypoints,
+      value: formatCompactNumber(data.failedRepositories),
     },
   ];
 

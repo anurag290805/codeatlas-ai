@@ -55,7 +55,7 @@ export function MonacoEditor({
         value={value}
         language={language}
         path={path}
-        theme={resolvedTheme === "dark" ? "vs-dark" : "light"}
+        theme={resolvedTheme === "dark" || resolvedTheme === "colourful" ? "vs-dark" : "light"}
         loading={loading ?? <DefaultLoadingIndicator />}
         onChange={handleChange}
         onMount={() => setIsMounted(true)}

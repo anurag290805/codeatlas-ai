@@ -19,7 +19,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
+  { label: "Dashboard", to: "/", icon: LayoutDashboard },
   { label: "Repositories", to: "/repositories", icon: FolderGit2 },
   { label: "AI Chat", to: "/chat", icon: MessageSquare },
   { label: "Dependency Graph", to: "/graph", icon: Network },
@@ -58,7 +58,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         aria-label="Primary navigation"
       >
         <div className="flex h-14 items-center justify-between border-b px-4">
-          <span className="text-sm font-semibold tracking-tight">CodeAtlas AI</span>
+          <span className="flex items-center gap-2 text-sm font-semibold tracking-tight"><img src="/codeatlas-logo.png" alt="" className="h-7 w-7 shrink-0 rounded-lg object-contain" /><span>CodeAtlas <span className="text-primary">AI</span></span></span>
           <Button
             variant="ghost"
             size="icon"
@@ -79,9 +79,9 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  "hover:bg-muted hover:text-foreground",
+                  "hover:bg-primary/8 hover:text-foreground",
                   isActive
-                    ? "bg-muted text-foreground"
+                    ? "bg-primary/10 text-primary ring-1 ring-primary/20"
                     : "text-muted-foreground",
                 )
               }

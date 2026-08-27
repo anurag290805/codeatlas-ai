@@ -1,5 +1,5 @@
 // src/components/layout/ThemeToggle.tsx
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Palette, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import {
  * duplicate any theme state itself.
  */
 export function ThemeToggle() {
-  const { setTheme } = useTheme();
+  const { setTheme, theme } = useTheme();
 
   return (
     <DropdownMenu>
@@ -25,8 +25,7 @@ export function ThemeToggle() {
           <Button variant="outline" size="icon" aria-label="Toggle theme" />
         }
       >
-          <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-          <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
+          {theme === "colourful" ? <Palette className="h-[1.2rem] w-[1.2rem] text-primary" /> : <><Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" /><Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" /></>}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => setTheme("light")}>
@@ -40,6 +39,10 @@ export function ThemeToggle() {
         <DropdownMenuItem onClick={() => setTheme("system")}>
           <Monitor className="mr-2 h-4 w-4" />
           <span>System</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("colourful")}>
+          <Palette className="mr-2 h-4 w-4" />
+          <span>Colourful</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

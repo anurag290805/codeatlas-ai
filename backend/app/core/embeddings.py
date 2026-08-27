@@ -303,6 +303,19 @@ class EmbeddingService:
 
     def _to_chunk_embedding(self, chunk: Any, vector: np.ndarray, repository_id: str | None) -> ChunkEmbedding:
         metadata = dict(getattr(chunk, "metadata", {}) or {})
+        # The vector store persists metadata, not the original CodeChunk.
+        # Preserve the source text here so retrieval can reconstruct the
+        # citation-ready code without reading the repository again.
+        source_code = getattr(chunk, "code", getattr(chunk, "source_code", ""))
+        if isinstance(source_code, str) and source_code:
+            metadata.setdefault("code", source_code)
+        # Line ranges are first-class fields on CodeChunk rather than entries
+        # in its metadata mapping. Carry them into the persisted metadata so
+        # vector retrieval can build valid source citations after deserialization.
+        for line_key in ("start_line", "end_line"):
+            line_value = getattr(chunk, line_key, None)
+            if line_value is not None:
+                metadata.setdefault(line_key, line_value)
         chunk_repository = repository_id or str(getattr(chunk, "repository_id", ""))
         file_path = getattr(chunk, "file_path", getattr(chunk, "relative_path", ""))
         language = getattr(chunk, "language", getattr(chunk, "programming_language", ""))
@@ -354,4 +367,3 @@ def estimate_token_count(text: str) -> int:
 
 # Backward-compatible name for consumers written against the previous module.
 EmbeddingProvider = AbstractEmbeddingProvider
-

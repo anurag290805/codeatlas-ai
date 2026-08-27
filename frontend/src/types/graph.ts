@@ -1,61 +1,85 @@
-// src/types/graph.ts
-
-import type { Node, Edge } from "@xyflow/react";
+import type { Edge, Node } from "@xyflow/react";
 
 import type { ID, Timestamp } from "./common";
 
-/** Semantic kind of a code entity represented as a graph node. */
+/** Node categories emitted by the graph API. */
 export type GraphNodeType =
-  | "file"
+  | "repository"
   | "directory"
-  | "module"
+  | "file"
   | "class"
   | "function"
-  | "interface";
+  | "method"
+  | "module"
+  | "interface"
+  | "import"
+  | "external_module"
+  | "external_symbol";
 
-/** Kind of relationship a graph edge represents between two code entities. */
-export type DependencyType =
-  | "imports"
-  | "exports"
-  | "extends"
-  | "implements"
-  | "calls"
-  | "references";
+/** Relationship categories emitted by the graph API. */
+export type DependencyType = string;
 
-/** Domain data carried by every dependency graph node, in addition to React Flow's layout fields. */
+export interface GraphApiNode {
+  readonly id: string;
+  readonly repository_id: string;
+  readonly type: GraphNodeType | string;
+  readonly name: string;
+  readonly file_path: string | null;
+  readonly symbol_type: string | null;
+  readonly language: string | null;
+  readonly start_line: number | null;
+  readonly end_line: number | null;
+  readonly parent_node_id: string | null;
+  readonly metadata: Readonly<Record<string, unknown>>;
+}
+
+export interface GraphApiEdge {
+  readonly source: string;
+  readonly target: string;
+  readonly relationship: string;
+  readonly weight: number;
+  readonly metadata: Readonly<Record<string, unknown>>;
+}
+
+export interface GraphApiResponse {
+  readonly repository_id: string;
+  readonly nodes: readonly GraphApiNode[];
+  readonly edges: readonly GraphApiEdge[];
+}
+
 export interface GraphNodeData extends Record<string, unknown> {
   readonly label: string;
   readonly filePath: string;
-  readonly nodeType: GraphNodeType;
+  readonly nodeType: GraphNodeType | string;
   readonly language: string;
   readonly importsCount: number;
   readonly exportsCount: number;
   readonly dependencies: readonly string[];
   readonly dependents: readonly string[];
   readonly lastModified: string;
+  readonly symbolType: string | null;
+  readonly startLine: number | null;
+  readonly endLine: number | null;
+  readonly metadata: Readonly<Record<string, unknown>>;
 }
 
-/** A React Flow node specialized with CodeAtlas's dependency graph domain data. */
-export type GraphNode = Node<GraphNodeData, GraphNodeType>;
+/** React Flow uses one stable renderer for all API node categories. */
+export type GraphNode = Node<GraphNodeData, "code">;
+export type GraphEdge = Edge<Record<string, unknown>, string>;
 
-/** A React Flow edge specialized with CodeAtlas's dependency relationship type. */
-export type GraphEdge = Edge<Record<string, unknown>, DependencyType>;
-
-/** Aggregate structural statistics computed over a repository's dependency graph. */
 export interface GraphStatistics {
-  readonly totalNodes: number;
-  readonly totalEdges: number;
-  readonly maxDepth: number;
-  readonly averageDependenciesPerNode: number;
-  readonly cyclicDependencyCount?: number;
-  readonly isolatedNodeCount?: number;
+  readonly total_nodes: number;
+  readonly total_edges: number;
+  readonly density: number;
+  readonly isolated_node_count: number;
+  readonly connected_component_count: number;
+  readonly relationship_counts: Readonly<Record<string, number>>;
 }
 
-/** Full dependency graph payload for a repository, as returned by the graph endpoint. */
 export interface DependencyGraph {
   readonly repositoryId: ID;
   readonly nodes: readonly GraphNode[];
   readonly edges: readonly GraphEdge[];
-  readonly statistics: GraphStatistics;
-  readonly generatedAt: Timestamp;
+  readonly statistics?: GraphStatistics;
+  readonly generatedAt?: Timestamp;
 }

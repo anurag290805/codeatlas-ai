@@ -52,14 +52,14 @@ export interface RepositoryLanguage {
  * card's `value: number` prop.
  */
 export interface RepositoryStatistics {
-  readonly fileCount: number;
-  readonly directoryCount: number;
-  readonly commitCount: number;
-  readonly contributorCount: number;
-  readonly languageCount: number;
-  readonly branchCount: number;
-  readonly chunkCount: number;
-  readonly embeddingCount: number;
+  readonly fileCount: number | null;
+  readonly directoryCount: number | null;
+  readonly commitCount: number | null;
+  readonly contributorCount: number | null;
+  readonly languageCount: number | null;
+  readonly branchCount: number | null;
+  readonly chunkCount: number | null;
+  readonly embeddingCount: number | null;
 }
 
 /** Source-host engagement metrics (distinct from CodeAtlas-derived analytics). */
@@ -148,6 +148,24 @@ export interface Repository {
   readonly lastIndexedAt?: Timestamp;
 }
 
+/** Detail payload returned by the repository workspace endpoint. */
+export interface RepositoryDetailResponse extends RepositoryListItem {
+  readonly description?: string | null;
+  readonly owner?: string | null;
+  readonly visibility?: RepositoryVisibility;
+  readonly primary_language?: string | null;
+  readonly created_at?: string | null;
+  readonly directory_count?: number | null;
+  readonly commit_count?: number | null;
+  readonly contributor_count?: number | null;
+  readonly language_count?: number | null;
+  readonly branch_count?: number | null;
+  readonly branches?: readonly RepositoryBranch[];
+  readonly statistics?: RepositoryStatistics;
+  readonly metrics?: RepositoryMetrics;
+  readonly files?: readonly FileTreeNode[];
+}
+
 /** Condensed repository projection used in list and card views (e.g. the dashboard). */
 export interface RepositorySummary {
   readonly id: ID;
@@ -162,3 +180,33 @@ export interface RepositorySummary {
   readonly sizeBytes?: number;
   readonly updatedAt: Timestamp;
 }
+
+/** Repository projection returned by the backend repository list endpoint. */
+export interface RepositoryListItem {
+  readonly id: number;
+  readonly repository_name: string;
+  readonly url: string;
+  readonly default_branch: string;
+  readonly status: "pending" | "cloning" | "parsing" | "embedding" | "ready" | "indexed" | "indexing" | "index_failed" | "failed_import" | "failed" | "deleting";
+  readonly files_indexed: number;
+  readonly chunks_generated: number;
+  readonly embeddings_generated: number;
+  readonly last_indexed_at: string | null;
+}
+
+/** Paginated repository response returned by the backend. */
+export interface RepositoryListResponse {
+  readonly items: readonly RepositoryListItem[];
+  readonly total: number;
+  readonly skip: number;
+  readonly limit: number;
+}
+
+/** Payload accepted by the backend repository import endpoint. */
+export interface RepositoryCreateRequest {
+  readonly url: string;
+  readonly branch?: string;
+}
+
+/** Repository response returned after an import is scheduled. */
+export type RepositoryCreateResponse = RepositoryListItem;

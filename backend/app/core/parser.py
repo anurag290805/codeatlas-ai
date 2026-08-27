@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from tree_sitter import Language, Node, Parser
+from tree_sitter_languages import get_language as get_packaged_language
 
 from app.config import get_settings
 from app.utils.file_utils import compute_sha256_of_text
@@ -553,9 +554,30 @@ def _load_language(languages_dir: Path, grammar_name: str) -> Language:
     if not library_path.is_file():
         raise LanguageGrammarNotAvailableError(
             f"Compiled Tree-sitter grammar library not found at {library_path}. "
-            "Build it with tree_sitter.Language.build_library() before parsing."
+            "Use the installed tree-sitter-languages package or provide a valid "
+            "custom compiled grammar directory."
         )
     return Language(str(library_path), grammar_name)
+
+
+@lru_cache(maxsize=None)
+def _load_packaged_language(grammar_name: str) -> Language:
+    """Load a grammar from the portable ``tree-sitter-languages`` package.
+
+    The package ships a platform-specific compiled grammar library and
+    exposes it through a stable API. Calling that API avoids relying on the
+    location of a virtual environment, site-packages layout, or operating
+    system-specific path conventions.
+    """
+    try:
+        return get_packaged_language(grammar_name)
+    except Exception as exc:  # noqa: BLE001 - package exposes no narrower error.
+        raise LanguageGrammarNotAvailableError(
+            f"Tree-sitter grammar '{grammar_name}' is unavailable from the "
+            "installed tree-sitter-languages package. Install the pinned "
+            "tree-sitter-languages dependency or configure a valid compiled "
+            "grammar directory."
+        ) from exc
 
 
 class CodeParser:
@@ -579,6 +601,10 @@ class CodeParser:
         """
         settings = get_settings()
         self._languages_dir = tree_sitter_languages_dir or settings.TREE_SITTER_LANGUAGES_DIR
+        # An explicitly supplied directory is an intentional custom grammar
+        # override. The default path may be absent because the supported
+        # package already bundles the grammars.
+        self._allow_packaged_grammars = tree_sitter_languages_dir is None
         self._parsers: dict[ProgrammingLanguage, Parser] = {}
         self._extractors: dict[ProgrammingLanguage, LanguageExtractor] = {
             spec.language: spec.extractor_factory() for spec in _LANGUAGE_SPECS
@@ -735,7 +761,16 @@ class CodeParser:
         if parser is not None:
             return parser
 
-        language = _load_language(self._languages_dir, spec.grammar_name)
+        try:
+            language = _load_language(self._languages_dir, spec.grammar_name)
+        except LanguageGrammarNotAvailableError:
+            if not self._allow_packaged_grammars:
+                raise
+            logger.info(
+                "Using bundled tree-sitter grammar: language=%s package=tree-sitter-languages",
+                spec.grammar_name,
+            )
+            language = _load_packaged_language(spec.grammar_name)
         parser = Parser()
         parser.set_language(language)
         self._parsers[spec.language] = parser

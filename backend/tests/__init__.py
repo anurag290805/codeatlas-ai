@@ -1,1 +1,0 @@
-"""Automated unit and integration tests for the backend application."""

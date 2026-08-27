@@ -29,6 +29,7 @@ from app.core.llm import (
     LLMAuthenticationError,
     LLMContextOverflowError,
     LLMInvalidPromptError,
+    LLMModelNotFoundError,
     LLMMalformedResponseError,
     LLMProviderOutageError,
     LLMRateLimitError,
@@ -176,11 +177,29 @@ async def query_health(
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> schemas.QueryHealthResponse:
-    """Return the health status of the retriever and LLM subsystems."""
+    """Return backend retrieval readiness and Ollama/model availability."""
+    ollama = await llm_service.check_health()
+    retriever_ready = retriever.is_ready()
+    if not retriever_ready:
+        health_status = "unhealthy"
+        message = "Repository retrieval is not configured."
+    elif not ollama.reachable:
+        health_status = "degraded"
+        message = ollama.message
+    elif not ollama.model_available:
+        health_status = "degraded"
+        message = ollama.message
+    else:
+        health_status = "healthy"
+        message = ollama.message
     return schemas.QueryHealthResponse(
+        status=health_status,
         retriever_ready=retriever.is_ready(),
         llm_provider=llm_service.provider_name.value,
         llm_model=llm_service.model_name,
+        ollama_reachable=ollama.reachable,
+        model_available=ollama.model_available,
+        message=message,
     )
 
 
@@ -237,6 +256,10 @@ async def _answer_query(
                 symbol_name=citation.symbol_name,
             )
             for citation in answer.citations
+            if citation.start_line is not None
+            and citation.end_line is not None
+            and citation.start_line >= 1
+            and citation.end_line >= citation.start_line
         ],
         provider=answer.provider.value,
         model=answer.model,
@@ -300,7 +323,19 @@ async def _generate_answer(llm_service: LLMService, retrieval_result):
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Answer generation timed out. Please retry.",
         ) from exc
-    except (LLMProviderOutageError, LLMMalformedResponseError) as exc:
+    except LLMModelNotFoundError as exc:
+        logger.error("Configured Ollama model is unavailable error=%s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except LLMProviderOutageError as exc:
+        logger.error("Ollama is unavailable error=%s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except LLMMalformedResponseError as exc:
         logger.error("Answer generation failed error=%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -372,7 +407,10 @@ def _ensure_repository_ready(db: Session, repository_id: str) -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Repository not found: {repository_id}",
         )
-    if repository.status != schemas.RepositoryStatus.INDEXED:
+    if repository.status not in {
+        schemas.RepositoryStatus.READY,
+        schemas.RepositoryStatus.INDEXED,
+    }:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Repository is not ready for querying (status: {repository.status}).",

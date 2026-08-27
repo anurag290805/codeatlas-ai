@@ -16,21 +16,19 @@ code itself.
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
-from app.config import get_settings
+from app.core.config import get_settings
 from app.core.parser import ParsedFile, ParsedSymbol, RepositoryParseResult
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-# Fallback maximum traversal depth used when application configuration does
-# not specify one, bounding worst-case ancestor/descendant walks on very
-# deeply nested repositories.
-_DEFAULT_MAX_TRAVERSAL_DEPTH = 50
 
 # Symbol types treated as class-like when resolving inheritance targets,
 # used to disambiguate identically named functions and classes during
@@ -380,7 +378,11 @@ class RepositoryGraph:
         if start_node_id not in self._nodes:
             raise NodeNotFoundError(f"Node '{start_node_id}' does not exist.")
 
-        effective_max_depth = max_depth or get_settings().graph_max_traversal_depth
+        effective_max_depth = (
+            max_depth
+            if max_depth is not None
+            else get_settings().graph_max_traversal_depth
+        )
         visited: set[str] = {start_node_id}
         queue: deque[tuple[str, int]] = deque([(start_node_id, 0)])
         results: list[GraphNode] = []
@@ -550,10 +552,11 @@ class GraphBuilder:
         """
         repository_id = getattr(parse_result, "repository_id", None)
         files = getattr(parse_result, "files", None)
-        if not repository_id or files is None:
+        if repository_id is None or files is None:
             raise MalformedParserOutputError(
                 "RepositoryParseResult must provide 'repository_id' and 'files'."
             )
+        repository_id = str(repository_id)
 
         logger.info("Graph generation started for repository '%s'.", repository_id)
 
@@ -908,7 +911,9 @@ class GraphBuilder:
     @staticmethod
     def _node_type_for_symbol(symbol_type: str) -> NodeType:
         normalized = str(getattr(symbol_type, "value", symbol_type)).strip().lower()
-        if normalized in _CLASS_LIKE_SYMBOL_TYPES:
+        if normalized in {"arrow_function"}:
+            return NodeType.FUNCTION
+        if normalized in _CLASS_LIKE_SYMBOL_TYPES | {"enum"}:
             return NodeType.CLASS
         if normalized == "method":
             return NodeType.METHOD
@@ -947,9 +952,22 @@ class GraphService:
     requests never trigger redundant graph construction.
     """
 
-    def __init__(self, builder: GraphBuilder | None = None) -> None:
+    def __init__(
+        self,
+        builder: GraphBuilder | None = None,
+        graph_directory: Path | None = None,
+    ) -> None:
         self._builder = builder or GraphBuilder()
         self._graphs: dict[str, RepositoryGraph] = {}
+        self._graph_directory = graph_directory or get_settings().REPOSITORIES_DIR.parent / "graphs"
+
+    @staticmethod
+    def _normalize_repository_id(repository_id: str | int) -> str:
+        """Return the canonical cache key used for a repository graph."""
+        normalized = str(repository_id).strip()
+        if not normalized:
+            raise GraphError("Repository id must not be empty.")
+        return normalized
 
     def build_graph(self, parse_result: RepositoryParseResult) -> RepositoryGraph:
         """
@@ -961,11 +979,34 @@ class GraphService:
         entry point for both initial indexing and future incremental
         re-indexing after a repository update.
         """
-        graph = self._builder.build(parse_result)
-        self._graphs[graph.repository_id] = graph
+        graph = self.build_staged_graph(parse_result)
+        self.publish_graph(graph)
         return graph
 
-    def get_graph(self, repository_id: str) -> RepositoryGraph:
+    def build_staged_graph(self, parse_result: RepositoryParseResult) -> RepositoryGraph:
+        """Build a graph without changing the currently published graph."""
+        graph = self._builder.build(parse_result)
+        return graph
+
+    def publish_graph(self, graph: RepositoryGraph) -> None:
+        """Persist and publish a fully built graph in one filesystem commit."""
+        repository_id = self._normalize_repository_id(graph.repository_id)
+        self._graph_directory.mkdir(parents=True, exist_ok=True)
+        target = self._graph_directory / f"{repository_id}.json"
+        temporary = target.with_suffix(f".json.tmp-{id(graph)}")
+        temporary.write_text(json.dumps(graph.to_serializable()), encoding="utf-8")
+        temporary.replace(target)
+        self._graphs[repository_id] = graph
+        stats = graph.statistics()
+        logger.info(
+            "Graph cached repository_id=%s nodes=%d edges=%d cache_size=%d",
+            repository_id,
+            stats.total_nodes,
+            stats.total_edges,
+            len(self._graphs),
+        )
+
+    def get_graph(self, repository_id: str | int) -> RepositoryGraph:
         """
         Return the cached graph for ``repository_id``.
 
@@ -973,21 +1014,71 @@ class GraphService:
             GraphNotFoundError: If no graph has been built for this
                 repository yet.
         """
-        graph = self._graphs.get(repository_id)
+        normalized_repository_id = self._normalize_repository_id(repository_id)
+        graph = self._graphs.get(normalized_repository_id)
+        if graph is None:
+            graph = self._load_persisted_graph(normalized_repository_id)
+            if graph is not None:
+                self._graphs[normalized_repository_id] = graph
+        logger.info(
+            "Graph lookup repository_id=%s found=%s",
+            normalized_repository_id,
+            graph is not None,
+        )
         if graph is None:
             raise GraphNotFoundError(
-                f"No graph has been built for repository '{repository_id}'."
+                f"No graph has been built for repository '{normalized_repository_id}'."
             )
         return graph
 
-    def has_graph(self, repository_id: str) -> bool:
-        """Return whether a graph is currently cached for ``repository_id``."""
-        return repository_id in self._graphs
+    def _load_persisted_graph(self, repository_id: str) -> RepositoryGraph | None:
+        path = self._graph_directory / f"{repository_id}.json"
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            graph = RepositoryGraph(repository_id=repository_id)
+            for raw_node in payload.get("nodes", []):
+                graph.add_node(GraphNode(
+                    node_id=raw_node["id"], repository_id=raw_node.get("repository_id", repository_id),
+                    node_type=NodeType(raw_node["type"]), name=raw_node.get("name", ""),
+                    file_path=raw_node.get("file_path"), symbol_type=raw_node.get("symbol_type"),
+                    language=raw_node.get("language"), start_line=raw_node.get("start_line"),
+                    end_line=raw_node.get("end_line"), parent_node_id=raw_node.get("parent_node_id"),
+                    metadata=raw_node.get("metadata", {}),
+                ))
+            for raw_edge in payload.get("edges", []):
+                graph.add_edge(GraphEdge(
+                    source_id=raw_edge["source"], target_id=raw_edge["target"],
+                    relationship=RelationshipType(raw_edge["relationship"]),
+                    weight=raw_edge.get("weight", 1.0), metadata=raw_edge.get("metadata", {}),
+                ))
+            return graph
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            logger.warning("Persisted graph could not be loaded repository_id=%s error=%s", repository_id, exc)
+            return None
 
-    def invalidate(self, repository_id: str) -> None:
+    def has_graph(self, repository_id: str | int) -> bool:
+        """Return whether a graph is currently cached for ``repository_id``."""
+        normalized_repository_id = self._normalize_repository_id(repository_id)
+        found = normalized_repository_id in self._graphs
+        logger.info("Graph cache check repository_id=%s found=%s", normalized_repository_id, found)
+        return found
+
+    def invalidate(self, repository_id: str | int) -> None:
         """Evict the cached graph for ``repository_id``, if present."""
-        self._graphs.pop(repository_id, None)
-        logger.info("Invalidated cached graph for repository '%s'.", repository_id)
+        normalized_repository_id = self._normalize_repository_id(repository_id)
+        self._graphs.pop(normalized_repository_id, None)
+        logger.info("Invalidated cached graph for repository '%s'.", normalized_repository_id)
+
+    def delete_persisted_graph(self, repository_id: str | int) -> None:
+        """Delete graph data as part of an explicit repository deletion."""
+        normalized = self._normalize_repository_id(repository_id)
+        self.invalidate(normalized)
+        try:
+            (self._graph_directory / f"{normalized}.json").unlink(missing_ok=True)
+        except OSError as exc:
+            raise GraphError(f"Failed to delete persisted graph '{normalized}'.") from exc
 
     def find_by_file(self, repository_id: str, file_path: str) -> list[GraphNode]:
         """Return all nodes associated with ``file_path`` in a repository's graph."""
@@ -1049,7 +1140,13 @@ class GraphService:
         """Return aggregate structural statistics for a repository's graph."""
         return self.get_graph(repository_id).statistics()
 
-    def serialize(self, repository_id: str) -> dict[str, Any]:
+    def serialize(self, repository_id: str | int) -> dict[str, Any]:
         """Return a JSON-friendly representation of a repository's full graph."""
         logger.info("Serializing graph for repository '%s'.", repository_id)
         return self.get_graph(repository_id).to_serializable()
+
+
+@lru_cache(maxsize=1)
+def get_graph_service() -> GraphService:
+    """Return the process-wide graph service shared by indexing and API reads."""
+    return GraphService()

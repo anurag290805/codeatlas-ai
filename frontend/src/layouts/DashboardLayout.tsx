@@ -12,6 +12,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/graph": "Dependency Graph",
   "/analytics": "Analytics",
   "/settings": "Settings",
+  "/search": "Search",
 };
 
 /**
@@ -23,7 +24,11 @@ export function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { pathname } = useLocation();
 
-  const title = PAGE_TITLES[pathname] ?? "CodeAtlas AI";
+  const title = PAGE_TITLES[pathname] ??
+    (pathname.startsWith("/repositories/") ? "Repository" :
+      pathname.startsWith("/chat") ? "AI Chat" :
+        pathname.startsWith("/graph") ? "Dependency Graph" :
+          pathname.startsWith("/analytics") ? "Analytics" : "CodeAtlas AI");
 
   return (
     <div className="flex min-h-screen bg-background">

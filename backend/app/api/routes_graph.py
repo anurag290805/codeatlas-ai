@@ -27,6 +27,7 @@ from app.core.graph_builder import (
     GraphNotFoundError,
     GraphService,
     GraphStatistics,
+    get_graph_service as get_shared_graph_service,
     NodeNotFoundError,
     NodeType,
     RelationshipType,
@@ -39,15 +40,9 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/repositories/{repository_id}/graph", tags=["graph"])
 
-# Single process-wide GraphService instance. GraphService caches built
-# graphs internally, so a shared instance is required for repository graphs
-# built during indexing to be visible to requests served by this router.
-_graph_service = GraphService()
-
-
 def get_graph_service() -> GraphService:
     """FastAPI dependency returning the shared ``GraphService`` instance."""
-    return _graph_service
+    return get_shared_graph_service()
 
 
 # ----------------------------------------------------------------------
@@ -539,10 +534,12 @@ async def get_graph_health(
 ) -> GraphHealthResponse:
     _ensure_repository_exists(db, repository_id)
 
-    if not graph_service.has_graph(repository_id):
+    try:
+        graph = graph_service.get_graph(repository_id)
+    except GraphNotFoundError:
         return GraphHealthResponse(repository_id=repository_id, graph_available=False)
 
-    stats = graph_service.get_statistics(repository_id)
+    stats = graph.statistics()
     return GraphHealthResponse(
         repository_id=repository_id,
         graph_available=True,

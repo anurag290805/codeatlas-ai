@@ -12,6 +12,7 @@ import json
 import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
 
@@ -71,6 +72,15 @@ class LLMAuthenticationError(LLMServiceError):
     """Compatibility exception for rejected provider access."""
 
 
+@dataclass(frozen=True)
+class OllamaHealth:
+    """Safe, non-sensitive status from an Ollama readiness probe."""
+
+    reachable: bool
+    model_available: bool
+    message: str
+
+
 class UsageMetadata(BaseModel):
     """Token accounting returned by Ollama when available."""
 
@@ -106,7 +116,7 @@ class LLMRequest(BaseModel):
     citations: tuple[Citation, ...] = ()
     model: str | None = Field(default=None, min_length=1)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, gt=0)
+    max_tokens: int = Field(default=256, gt=0)
     response_format: ResponseFormat = ResponseFormat.MARKDOWN
 
     @field_validator("query")
@@ -157,6 +167,8 @@ class LLMStreamChunk(BaseModel):
 class _AsyncClient(Protocol):
     async def post(self, url: str, **kwargs: Any) -> httpx.Response: ...
 
+    async def get(self, url: str, **kwargs: Any) -> httpx.Response: ...
+
     async def aclose(self) -> None: ...
 
 
@@ -176,6 +188,13 @@ class AbstractLLMProvider(ABC):
 
 class OllamaProvider(AbstractLLMProvider):
     """Provider implementation for Ollama's ``/api/generate`` endpoint."""
+
+    _GROUNDING_SYSTEM_PROMPT = (
+        "You are CodeAtlas AI, a repository code assistant. Answer using the "
+        "provided repository context when it is relevant. Do not claim that "
+        "the repository is unavailable when context is present. If the "
+        "context does not contain enough evidence, say what is missing."
+    )
 
     provider_name = LLMProviderName.OLLAMA
 
@@ -197,15 +216,65 @@ class OllamaProvider(AbstractLLMProvider):
         if self._owns_client:
             await self._client.aclose()
 
+    async def check_health(self, timeout_seconds: float = 5.0) -> OllamaHealth:
+        """Check Ollama reachability and whether the configured model is installed."""
+        try:
+            response = await self._client.get("/api/tags", timeout=timeout_seconds)
+            if response.status_code >= 400:
+                return OllamaHealth(
+                    reachable=False,
+                    model_available=False,
+                    message="Ollama responded with an error. Verify the local Ollama service.",
+                )
+            data = response.json()
+            models = data.get("models", []) if isinstance(data, dict) else []
+            names = {
+                str(model.get("name"))
+                for model in models
+                if isinstance(model, dict) and model.get("name")
+            }
+            if self._settings.ollama_model not in names:
+                return OllamaHealth(
+                    reachable=True,
+                    model_available=False,
+                    message=(
+                        "Ollama is reachable, but the configured model is missing. "
+                        "Pull the configured model before using AI Chat."
+                    ),
+                )
+            return OllamaHealth(
+                reachable=True,
+                model_available=True,
+                message="Ollama and the configured model are available.",
+            )
+        except httpx.TimeoutException:
+            return OllamaHealth(
+                reachable=False,
+                model_available=False,
+                message="Ollama health check timed out. Verify the local Ollama service.",
+            )
+        except (httpx.RequestError, ValueError, TypeError):
+            return OllamaHealth(
+                reachable=False,
+                model_available=False,
+                message="Ollama is unavailable. Start Ollama before using AI Chat.",
+            )
+
     async def generate(self, request: LLMRequest) -> tuple[str, UsageMetadata | None]:
         """Call Ollama and return response text plus token usage."""
         payload = self._payload(request, stream=False)
         try:
             response = await self._client.post("/api/generate", json=payload)
         except httpx.TimeoutException as exc:
-            raise LLMTimeoutError("Ollama generation timed out") from exc
+            raise LLMTimeoutError(
+                f"Ollama generation timed out after {self._settings.ollama_timeout_seconds:g}s "
+                f"at {self._settings.ollama_base_url}"
+            ) from exc
         except httpx.RequestError as exc:
-            raise LLMProviderOutageError("Ollama could not be reached") from exc
+            raise LLMProviderOutageError(
+                f"Ollama could not be reached at {self._settings.ollama_base_url}. "
+                "Start Ollama and confirm the configured model is installed."
+            ) from exc
 
         data = self._parse_response(response)
         text = data.get("response")
@@ -230,7 +299,7 @@ class OllamaProvider(AbstractLLMProvider):
                         raise LLMMalformedResponseError("Ollama stream item was not an object")
                     error = data.get("error")
                     if error:
-                        raise LLMProviderOutageError(str(error))
+                        raise self._error_from_provider_message(str(error))
                     yield LLMStreamChunk(
                         delta=str(data.get("response", "")),
                         is_final=bool(data.get("done", False)),
@@ -238,9 +307,15 @@ class OllamaProvider(AbstractLLMProvider):
                         usage=self._usage(data),
                     )
         except httpx.TimeoutException as exc:
-            raise LLMTimeoutError("Ollama streaming timed out") from exc
+            raise LLMTimeoutError(
+                f"Ollama streaming timed out after {self._settings.ollama_timeout_seconds:g}s "
+                f"at {self._settings.ollama_base_url}"
+            ) from exc
         except httpx.RequestError as exc:
-            raise LLMProviderOutageError("Ollama could not be reached") from exc
+            raise LLMProviderOutageError(
+                f"Ollama could not be reached at {self._settings.ollama_base_url}. "
+                "Start Ollama and confirm the configured model is installed."
+            ) from exc
 
     def _payload(self, request: LLMRequest, *, stream: bool) -> dict[str, Any]:
         prompt = request.context
@@ -248,13 +323,22 @@ class OllamaProvider(AbstractLLMProvider):
             prompt = f"Repository context:\n{prompt}\n\nQuestion: {request.query}"
         else:
             prompt = request.query
+        logger.info(
+            "Ollama request prepared model={} context_chars={} prompt_chars={} citations={}",
+            request.model or self._settings.ollama_model,
+            len(request.context),
+            len(prompt),
+            len(request.citations),
+        )
         payload: dict[str, Any] = {
             "model": request.model or self._settings.ollama_model,
             "prompt": prompt,
+            "system": self._GROUNDING_SYSTEM_PROMPT,
             "stream": stream,
             "options": {
                 "temperature": request.temperature,
-                "num_predict": request.max_tokens,
+                "num_predict": min(request.max_tokens, self._settings.ollama_max_tokens),
+                "num_ctx": self._settings.ollama_num_ctx,
             },
         }
         if request.response_format is ResponseFormat.JSON:
@@ -285,13 +369,26 @@ class OllamaProvider(AbstractLLMProvider):
         if not isinstance(data, dict):
             raise LLMMalformedResponseError("Ollama response was not a JSON object")
         if data.get("error"):
-            raise LLMProviderOutageError(str(data["error"]))
+            raise cls._error_from_provider_message(str(data["error"]))
         return data
+
+    @staticmethod
+    def _error_from_provider_message(message: str) -> LLMServiceError:
+        if "not found" in message.lower() or "model" in message.lower() and "exist" in message.lower():
+            return LLMModelNotFoundError(
+                "Configured Ollama model was not found. Install it with `ollama pull <OLLAMA_MODEL>`."
+            )
+        return LLMProviderOutageError(
+            "Ollama returned an error while generating the answer. Verify the local Ollama service."
+        )
 
     @staticmethod
     def _validate_status(response: httpx.Response) -> None:
         if response.status_code == 404:
-            raise LLMModelNotFoundError("Configured Ollama model was not found")
+            raise LLMModelNotFoundError(
+                "Configured Ollama model was not found. "
+                "Install it with `ollama pull <OLLAMA_MODEL>`."
+            )
         if response.status_code == 429:
             raise LLMRateLimitError("Ollama rejected the request due to throttling")
         if response.status_code >= 500:
@@ -316,6 +413,16 @@ class LLMService:
     def is_ready(self) -> bool:
         """Return whether the service has a configured Ollama provider."""
         return self.provider_name is LLMProviderName.OLLAMA and bool(self.model_name)
+
+    async def check_health(self) -> OllamaHealth:
+        """Probe provider readiness without loading a model or generating text."""
+        if not self.is_ready() or not isinstance(self._provider, OllamaProvider):
+            return OllamaHealth(
+                reachable=False,
+                model_available=False,
+                message="The LLM provider is not configured.",
+            )
+        return await self._provider.check_health()
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate and normalize one grounded answer."""

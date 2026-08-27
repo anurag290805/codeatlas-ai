@@ -16,6 +16,7 @@ require changes only within this module: concrete storage engines implement
 from __future__ import annotations
 
 import json
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -47,6 +48,7 @@ _RESERVED_METADATA_KEYS = frozenset(
         "language",
         "start_line",
         "end_line",
+        "code",
     }
 )
 
@@ -159,6 +161,11 @@ def _record_to_storage_metadata(record: StoredVectorRecord) -> dict[str, Any]:
         "language": record.language,
         "start_line": record.start_line if record.start_line is not None else -1,
         "end_line": record.end_line if record.end_line is not None else -1,
+        # Source code is a required retrieval field and Chroma supports it
+        # as a scalar string. Store it explicitly rather than relying on the
+        # auxiliary JSON blob, which keeps the schema queryable and makes the
+        # contract with RetrieverService unambiguous.
+        "code": str(record.metadata.get("code", "")),
         _METADATA_JSON_KEY: json.dumps(extra_metadata, default=str),
     }
     return storage_metadata
@@ -169,9 +176,16 @@ def _storage_metadata_to_record(
 ) -> StoredVectorRecord:
     """Reconstruct a ``StoredVectorRecord`` from persisted flat metadata."""
     try:
-        extra_metadata = json.loads(storage_metadata.get(_METADATA_JSON_KEY, "{}"))
+        decoded_metadata = json.loads(storage_metadata.get(_METADATA_JSON_KEY, "{}"))
+        extra_metadata = decoded_metadata if isinstance(decoded_metadata, dict) else {}
     except (TypeError, json.JSONDecodeError):
         extra_metadata = {}
+
+    # New records store code as a dedicated field. The JSON fallback preserves
+    # compatibility with any intermediate records that serialized code before
+    # the dedicated field was introduced.
+    if "code" in storage_metadata:
+        extra_metadata["code"] = storage_metadata["code"]
 
     start_line = storage_metadata.get("start_line")
     end_line = storage_metadata.get("end_line")
@@ -256,6 +270,12 @@ class ChromaVectorStore(AbstractVectorStore):
         persist_directory = str(persist_directory)
 
         try:
+            # Chroma 0.5.x still invokes its PostHog client even when the
+            # setting disables telemetry. Disable the client explicitly as a
+            # compatibility safeguard for newer posthog signatures.
+            import posthog
+
+            posthog.disabled = True
             self._client = chromadb.PersistentClient(
                 path=persist_directory,
                 settings=ChromaSettings(anonymized_telemetry=False),
@@ -270,10 +290,9 @@ class ChromaVectorStore(AbstractVectorStore):
     def create_collection(self, collection_name: str) -> None:
         try:
             self._client.get_or_create_collection(name=collection_name)
-        except Exception as exc:  # noqa: BLE001
-            raise VectorStorePersistenceError(
-                f"Failed to create collection '{collection_name}'."
-            ) from exc
+        except Exception as exc:
+            logger.exception("Chroma collection creation failed")
+            raise
         logger.info("Collection '%s' is ready.", collection_name)
 
     def collection_exists(self, collection_name: str) -> bool:
@@ -494,13 +513,58 @@ class VectorStoreService:
         """Derive the collection name for a repository's isolated index."""
         return f"{_COLLECTION_NAME_PREFIX}_{repository_id}"
 
+    def _active_collection_name(self, repository_id: str) -> str:
+        """Resolve the durable collection pointer, with legacy-name fallback."""
+        settings = get_settings()
+        pointer = settings.chroma_persist_directory / f"active_{repository_id}.json"
+        try:
+            payload = json.loads(pointer.read_text(encoding="utf-8"))
+            name = str(payload.get("collection", ""))
+            if name and self._store.collection_exists(name):
+                return name
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+        return self._collection_name_for(repository_id)
+
+    def stage_embeddings(self, repository_id: str, embeddings: list[ChunkEmbedding]) -> str:
+        """Write a complete new generation without touching the active index."""
+        collection_name = f"{self._collection_name_for(repository_id)}_{uuid.uuid4().hex}"
+        self._store.create_collection(collection_name)
+        try:
+            self._store.upsert_vectors(collection_name, embeddings)
+        except Exception:
+            try:
+                self._store.delete_collection(collection_name)
+            except Exception:
+                logger.exception("Failed to clean staged collection '%s'", collection_name)
+            raise
+        return collection_name
+
+    def publish_staged_collection(self, repository_id: str, collection_name: str) -> None:
+        """Publish a staged generation by atomically replacing its pointer."""
+        settings = get_settings()
+        settings.chroma_persist_directory.mkdir(parents=True, exist_ok=True)
+        pointer = settings.chroma_persist_directory / f"active_{repository_id}.json"
+        old_name = self._active_collection_name(repository_id)
+        temporary = pointer.with_suffix(f".json.tmp-{uuid.uuid4().hex}")
+        temporary.write_text(json.dumps({"collection": collection_name}), encoding="utf-8")
+        temporary.replace(pointer)
+        if old_name != collection_name and self._store.collection_exists(old_name):
+            self._store.delete_collection(old_name)
+        logger.info("Published vector generation repository_id=%s collection=%s", repository_id, collection_name)
+
+    def discard_staged_collection(self, collection_name: str) -> None:
+        """Remove only a staged collection."""
+        if self._store.collection_exists(collection_name):
+            self._store.delete_collection(collection_name)
+
     def ensure_repository_collection(self, repository_id: str) -> None:
         """Create the repository's collection if it does not already exist."""
         self._store.create_collection(self._collection_name_for(repository_id))
 
     def repository_collection_exists(self, repository_id: str) -> bool:
         """Return whether a collection exists for ``repository_id``."""
-        return self._store.collection_exists(self._collection_name_for(repository_id))
+        return self._store.collection_exists(self._active_collection_name(repository_id))
 
     def index_embeddings(
         self, repository_id: str, embeddings: list[ChunkEmbedding]
@@ -527,7 +591,7 @@ class VectorStoreService:
             )
             return 0
 
-        collection_name = self._collection_name_for(repository_id)
+        collection_name = self._active_collection_name(repository_id)
         self.ensure_repository_collection(repository_id)
         return self._store.upsert_vectors(collection_name, embeddings)
 
@@ -569,7 +633,7 @@ class VectorStoreService:
         if top_k <= 0:
             raise VectorSearchError("top_k must be a positive integer.")
 
-        collection_name = self._collection_name_for(repository_id)
+        collection_name = self._active_collection_name(repository_id)
         logger.info(
             "Running similarity search on repository '%s' (top_k=%d).",
             repository_id,
@@ -585,7 +649,7 @@ class VectorStoreService:
 
     def delete_chunks(self, repository_id: str, chunk_ids: list[str]) -> int:
         """Delete a batch of chunk vectors from a repository's collection."""
-        collection_name = self._collection_name_for(repository_id)
+        collection_name = self._active_collection_name(repository_id)
         return self._store.delete_vectors(collection_name, chunk_ids)
 
     def delete_repository(self, repository_id: str) -> None:
@@ -596,7 +660,7 @@ class VectorStoreService:
         existing collection rather than raising an error, since callers
         frequently invoke this as part of idempotent cleanup routines.
         """
-        collection_name = self._collection_name_for(repository_id)
+        collection_name = self._active_collection_name(repository_id)
         if not self._store.collection_exists(collection_name):
             logger.warning(
                 "delete_repository called for '%s' but no collection exists.",
@@ -604,6 +668,10 @@ class VectorStoreService:
             )
             return
         self._store.delete_collection(collection_name)
+        try:
+            (get_settings().chroma_persist_directory / f"active_{repository_id}.json").unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to remove active collection pointer repository_id=%s", repository_id)
 
     def clear_repository(self, repository_id: str) -> None:
         """Remove all vectors for a repository while keeping its collection."""
@@ -612,7 +680,7 @@ class VectorStoreService:
 
     def get_repository_stats(self, repository_id: str) -> CollectionStats:
         """Return vector count statistics for a repository's collection."""
-        collection_name = self._collection_name_for(repository_id)
+        collection_name = self._active_collection_name(repository_id)
         vector_count = self._store.count_vectors(collection_name)
         return CollectionStats(
             collection_name=collection_name,

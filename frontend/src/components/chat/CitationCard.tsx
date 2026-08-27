@@ -1,111 +1,147 @@
-import { useState } from "react";
-import { Check, Copy, ExternalLink, FileCode2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import type { Citation } from "@/types";
+// src/components/chat/CitationCard.tsx
 
-interface CitationCardProps {
-  citation: Citation;
-  onOpenFile?: (citation: Citation) => void;
+import { useState, type FC } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ChevronDown, FileCode2, Folder, Hash } from "lucide-react";
+
+import { cn } from "@/lib/utils";
+import { CodeBlock } from "@/components/chat/CodeBlock";
+import type { Citation } from "@/types";
+import type { EnrichedCitation } from "@/types/chat-workspace";
+
+export interface CitationCardProps {
+  citation: Citation | EnrichedCitation;
+  onOpen?: (citation: Citation) => void;
   className?: string;
 }
 
-const COPY_FEEDBACK_DURATION_MS = 1500;
-
-function formatLineRange(startLine?: number, endLine?: number): string | null {
-  if (startLine == null) return null;
-  if (endLine == null || endLine === startLine) return `L${startLine}`;
-  return `L${startLine}-${endLine}`;
+function basename(path: string): string {
+  const parts = path.split("/");
+  return parts[parts.length - 1] || path;
 }
 
-function buildCitationReference(citation: Citation): string {
-  const lineRange = formatLineRange(citation.startLine, citation.endLine);
-  return lineRange ? `${citation.filePath}:${lineRange}` : citation.filePath;
+function dirname(path: string): string | null {
+  const parts = path.split("/");
+  parts.pop();
+  return parts.length > 0 ? parts.join("/") : null;
 }
 
-export function CitationCard({ citation, onOpenFile, className }: CitationCardProps) {
-  const [isCopied, setIsCopied] = useState(false);
-  const lineRange = formatLineRange(citation.startLine, citation.endLine);
-  const fileName = citation.filePath.split("/").pop() ?? citation.filePath;
+function isEnriched(c: Citation | EnrichedCitation): c is EnrichedCitation {
+  return "confidence" in c || "symbol" in c || "language" in c;
+}
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(buildCitationReference(citation));
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), COPY_FEEDBACK_DURATION_MS);
-    } catch {
-      // Clipboard access can be denied by the browser; the UI simply stays
-      // in its un-copied state rather than surfacing a disruptive error.
-    }
-  };
+/**
+ * Full detail card for a single grounding citation. Renders whatever
+ * metadata is actually present (confidence/symbol/language are optional —
+ * see the EnrichedCitation note in types/chat-workspace.ts) and expands
+ * in place to show the real snippet, rather than only linking out.
+ */
+export const CitationCard: FC<CitationCardProps> = ({ citation, onOpen, className }) => {
+  const [expanded, setExpanded] = useState(false);
+  const enriched = isEnriched(citation) ? citation : undefined;
+  const folder = enriched?.folder ?? dirname(citation.filePath);
+  const lineLabel =
+    citation.startLine === citation.endLine
+      ? `Line ${citation.startLine}`
+      : `Lines ${citation.startLine}\u2013${citation.endLine}`;
 
   return (
-    <Card
+    <div
       className={cn(
-        "flex flex-col gap-2 border-border/60 bg-muted/30 p-3 text-xs",
+        "overflow-hidden rounded-xl border border-border/60 bg-muted/20 transition-colors",
+        "hover:border-violet-400/40",
         className,
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <FileCode2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <p className="truncate font-medium text-foreground">{fileName}</p>
-            <p className="truncate text-[11px] text-muted-foreground">
-              {citation.filePath}
-            </p>
-          </div>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-start gap-3 px-3.5 py-3 text-left"
+      >
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-400/10 text-violet-300">
+          <FileCode2 className="h-3.5 w-3.5" />
         </div>
-        {typeof citation.relevanceScore === "number" && (
-          <Badge variant="outline" className="shrink-0 font-normal">
-            {Math.round(citation.relevanceScore * 100)}% match
-          </Badge>
-        )}
-      </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="truncate text-sm font-medium text-foreground">{basename(citation.filePath)}</span>
+            {enriched?.language && (
+              <span className="rounded bg-muted/50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {enriched.language}
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+            {folder && (
+              <span className="inline-flex items-center gap-1 truncate">
+                <Folder className="h-3 w-3 shrink-0" /> {folder}
+              </span>
+            )}
+            <span>{lineLabel}</span>
+            {enriched?.symbol && (
+              <span className="inline-flex items-center gap-1">
+                <Hash className="h-3 w-3" /> {enriched.symbol}
+              </span>
+            )}
+          </div>
+          {typeof enriched?.confidence === "number" && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="h-1 w-16 overflow-hidden rounded-full bg-muted/50">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400"
+                  style={{ width: `${Math.round(enriched.confidence * 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {Math.round(enriched.confidence * 100)}% match
+              </span>
+            </div>
+          )}
+        </div>
+        <ChevronDown
+          className={cn(
+            "mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-180",
+          )}
+        />
+      </button>
 
-      <div className="flex items-center gap-1.5">
-        {citation.symbolName && (
-          <Badge variant="outline" className="font-normal">
-            {citation.symbolName}
-          </Badge>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+            className="border-t border-border/40 px-3.5 py-3"
+          >
+            {enriched?.preview ? (
+              <CodeBlock
+                code={enriched.preview}
+                language={enriched.language}
+                filename={basename(citation.filePath)}
+                highlightLines={Array.from(
+                  { length: Math.max(1, citation.endLine - citation.startLine + 1) },
+                  (_, i) => citation.startLine + i,
+                )}
+                collapseAfter={40}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No preview available for this citation yet \u2014 open the file to view it in context.
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => onOpen?.(citation)}
+              className="mt-2 text-xs font-medium text-violet-300 hover:text-violet-200"
+            >
+              Open in workspace \u2192
+            </button>
+          </motion.div>
         )}
-        {lineRange && (
-          <Badge variant="outline" className="font-normal">
-            {lineRange}
-          </Badge>
-        )}
-      </div>
-
-      {citation.codePreview && (
-        <pre className="max-h-28 overflow-auto rounded-md border border-border/60 bg-background/60 p-2 font-mono text-[11px] leading-relaxed text-foreground">
-          <code>{citation.codePreview}</code>
-        </pre>
-      )}
-
-      <div className="mt-1 flex items-center gap-1.5">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 flex-1 gap-1 text-xs"
-          onClick={() => onOpenFile?.(citation)}
-        >
-          <ExternalLink className="h-3 w-3" />
-          Open File
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 flex-1 gap-1 text-xs"
-          onClick={handleCopy}
-        >
-          {isCopied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-          {isCopied ? "Copied" : "Copy"}
-        </Button>
-      </div>
-    </Card>
+      </AnimatePresence>
+    </div>
   );
-}
+};
+
+export default CitationCard;

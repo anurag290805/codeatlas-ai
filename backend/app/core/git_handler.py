@@ -195,7 +195,12 @@ class GitRepositoryHandler:
     # ---------------------------------------------------------------
 
     def clone_repository(
-        self, repository_url: str, *, branch: str | None = None, force_reclone: bool = False
+        self,
+        repository_url: str,
+        *,
+        branch: str | None = None,
+        force_reclone: bool = False,
+        target_path: Path | None = None,
     ) -> RepositoryMetadata:
         """Clone a repository, reusing an existing clone when possible.
 
@@ -214,13 +219,13 @@ class GitRepositoryHandler:
             RepositoryOperationError: If cloning fails.
         """
         identity = self.validate_repository_url(repository_url)
-        local_path = self.resolve_local_path(identity)
+        local_path = Path(target_path) if target_path is not None else self.resolve_local_path(identity)
 
         if force_reclone and local_path.exists():
             logger.info("Force re-clone requested; removing existing clone: %s", local_path)
             remove_directory(local_path)
 
-        if self._is_valid_git_repository(local_path):
+        if target_path is None and self._is_valid_git_repository(local_path):
             logger.info("Repository already cloned, reusing existing clone: %s", local_path)
             return self._build_metadata(identity, local_path, RepositoryStatus.CLONED)
 
@@ -257,6 +262,29 @@ class GitRepositoryHandler:
 
         logger.info("Clone completed for repository %s", identity.full_name)
         return self._build_metadata(identity, local_path, RepositoryStatus.CLONED)
+
+    def promote_repository_clone(self, identity: RepositoryIdentity, staged_path: Path) -> Path:
+        """Atomically promote a staged clone while retaining the live clone until then."""
+        live_path = self.resolve_local_path(identity)
+        backup_path = live_path.with_name(f".{live_path.name}.previous")
+        try:
+            if backup_path.exists():
+                remove_directory(backup_path)
+            if live_path.exists():
+                live_path.replace(backup_path)
+            Path(staged_path).replace(live_path)
+            if backup_path.exists():
+                remove_directory(backup_path)
+        except OSError as exc:
+            if live_path.exists() and not backup_path.exists():
+                remove_directory(live_path, missing_ok=True)
+            if backup_path.exists() and not live_path.exists():
+                backup_path.replace(live_path)
+            raise RepositoryOperationError(
+                f"Failed to promote staged repository clone for {identity.full_name!r}: {exc}"
+            ) from exc
+        logger.info("Promoted staged clone repository=%s path=%s", identity.full_name, live_path)
+        return live_path
 
     # ---------------------------------------------------------------
     # Repository Updating

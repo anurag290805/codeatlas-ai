@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Bot, User } from "lucide-react";
+import { AlertCircle, Bot, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 import { CitationCard } from "@/components/chat/CitationCard";
@@ -42,6 +42,7 @@ export function MessageBubble({ message, onOpenCitation, className }: MessageBub
   const isUser = message.role === "user";
   const isPending = message.status === "pending" && message.content.length === 0;
   const isStreaming = message.status === "streaming";
+  const isError = message.status === "error";
 
   return (
     <div
@@ -64,13 +65,20 @@ export function MessageBubble({ message, onOpenCitation, className }: MessageBub
             "min-w-0 rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
             isUser
               ? "bg-primary text-primary-foreground"
-              : "border border-border/60 bg-card text-card-foreground",
+              : isError
+                ? "border border-destructive/30 bg-destructive/5 text-destructive"
+                : "border border-border/60 bg-card text-card-foreground",
           )}
         >
           {isPending ? (
             <TypingIndicator />
           ) : isUser ? (
             <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          ) : isError ? (
+            <div className="flex items-start gap-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            </div>
           ) : (
             <div className="min-w-0">
               <MarkdownRenderer content={message.content} />
@@ -87,7 +95,7 @@ export function MessageBubble({ message, onOpenCitation, className }: MessageBub
               <CitationCard
                 key={citation.id}
                 citation={citation}
-                onOpenFile={onOpenCitation}
+                onOpen={onOpenCitation}
               />
             ))}
           </div>

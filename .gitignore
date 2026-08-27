@@ -64,6 +64,11 @@ temp/
 data/
 backend/data/
 
+# Accidental/local copied repositories and unused design artifacts
+/backend/requests/
+/Logo.png
+/frontend/graph.json
+
 # Vector stores and embedding indexes
 chroma/
 chromadb/
@@ -150,4 +155,3 @@ test-results/
 *.override
 site/
 .mkdocs_cache/
-

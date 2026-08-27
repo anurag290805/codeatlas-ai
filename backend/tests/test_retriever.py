@@ -33,11 +33,40 @@ from app.core.vector_store import (
     VectorSearchResult,
     VectorStoreError,
 )
+from app.core.llm import LLMService
 
 
 class IdentityReranker:
     def rerank(self, _query_text: str, candidates: list[_ScoredChunk]) -> list[_ScoredChunk]:
         return candidates
+
+
+def test_retrieval_context_reaches_llm_request_with_citation_path() -> None:
+    retrieval = RetrievalResult(
+        query=RetrievalQuery("summarize the repository", "repo-1"),
+        context=AssembledContext(
+            query_text="summarize the repository",
+            chunks=[
+                RetrievedChunk(
+                    code="def main():\n    pass",
+                    relevance_score=0.9,
+                    citation=CitationReference("repo-1", "src/main.py", "main", 1, 2),
+                    language="python",
+                )
+            ],
+            estimated_token_count=6,
+            token_budget=1200,
+            truncated=False,
+        ),
+        candidates_found=1,
+        candidates_after_filtering=1,
+    )
+
+    request = LLMService.request_from_retrieval(retrieval)
+
+    assert "File: src/main.py" in request.context
+    assert "def main" in request.context
+    assert request.citations[0].start_line == 1
 
 
 def make_record(
@@ -425,7 +454,7 @@ class TestRegressionAndScale:
     def test_large_metadata_is_preserved(self) -> None:
         extra = {f"key-{index}": "value" * 20 for index in range(100)}
         chunk = ContextAssembler().assemble("q", [make_scored(metadata=extra)], 1000).chunks[0]
-        assert len(chunk.metadata) == 102
+        assert len(chunk.metadata) == 101
         assert chunk.code.startswith("def authenticate")
 
     @pytest.mark.parametrize("language", ["python", "javascript", "typescript", "go", "rust", ""])

@@ -3,7 +3,7 @@ import type { PropsWithChildren } from "react";
 
 /**
  * Encapsulates next-themes configuration for the application, enabling
- * light/dark/system theme support via a `class` attribute on the
+ * light/dark/system/colourful theme support via a `class` attribute on the
  * document root for Tailwind's dark mode variant and shadcn/ui.
  */
 function ThemeProvider({ children }: PropsWithChildren) {
@@ -12,6 +12,7 @@ function ThemeProvider({ children }: PropsWithChildren) {
       attribute="class"
       defaultTheme="system"
       enableSystem
+      themes={["light", "dark", "system", "colourful"]}
       disableTransitionOnChange
     >
       {children}

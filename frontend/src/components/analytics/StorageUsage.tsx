@@ -14,6 +14,7 @@ export interface StorageChartProps {
   /** Storage breakdown, in bytes, for the repository. */
   data: StorageBreakdown;
   isLoading?: boolean;
+  error?: string;
   className?: string;
 }
 
@@ -72,23 +73,24 @@ const StorageTooltip: FC<{
 export const StorageChart: FC<StorageChartProps> = ({
   data,
   isLoading = false,
+  error,
   className,
 }) => {
   const chartData = useMemo<StorageDatum[]>(() => {
-    const entries: Omit<StorageDatum, "color">[] = [
-      { key: "source", name: "Source files", bytes: data.sourceFilesBytes },
-      { key: "embeddings", name: "Embeddings", bytes: data.embeddingsBytes },
-      { key: "metadata", name: "Metadata", bytes: data.metadataBytes },
-      { key: "graph", name: "Graph data", bytes: data.graphDataBytes },
+    const entries: Array<Omit<StorageDatum, "color"> | null> = [
+      data.sourceFilesBytes == null ? null : { key: "source", name: "Source files", bytes: data.sourceFilesBytes },
+      data.embeddingsBytes == null ? null : { key: "embeddings", name: "Embeddings", bytes: data.embeddingsBytes },
+      data.metadataBytes == null ? null : { key: "metadata", name: "Metadata", bytes: data.metadataBytes },
+      data.graphDataBytes == null ? null : { key: "graph", name: "Graph data", bytes: data.graphDataBytes },
     ];
-    return entries.map((entry, index) => ({
+    return entries.filter((entry): entry is Omit<StorageDatum, "color"> => entry !== null).map((entry, index) => ({
       ...entry,
       color: CHART_COLORS[index % CHART_COLORS.length],
     }));
   }, [data]);
 
   const total = data.totalBytes;
-  const isEmpty = total === 0;
+  const isEmpty = total == null || total === 0;
 
   return (
     <Card className={cn("border-border/60", className)}>
@@ -100,6 +102,8 @@ export const StorageChart: FC<StorageChartProps> = ({
       <CardContent>
         {isLoading ? (
           <StorageChartSkeleton />
+        ) : error ? (
+          <ChartErrorState message={error} />
         ) : isEmpty ? (
           <StorageChartEmptyState />
         ) : (
@@ -125,7 +129,7 @@ export const StorageChart: FC<StorageChartProps> = ({
                     <Cell key={entry.key} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip content={<StorageTooltip total={total} />} />
+                <Tooltip content={<StorageTooltip total={total ?? 0} />} />
                 <Legend
                   verticalAlign="bottom"
                   height={36}
@@ -139,7 +143,7 @@ export const StorageChart: FC<StorageChartProps> = ({
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pb-9">
               <p className="text-lg font-semibold text-foreground">
-                {formatBytes(total)}
+                {formatBytes(total ?? 0)}
               </p>
               <p className="text-[11px] text-muted-foreground">total storage</p>
             </div>
@@ -168,6 +172,13 @@ const StorageChartEmptyState: FC = () => (
     <p className="max-w-[220px] text-xs text-muted-foreground">
       Storage usage will appear once the repository has been processed.
     </p>
+  </div>
+);
+
+const ChartErrorState: FC<{ message: string }> = ({ message }) => (
+  <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+    <p className="text-sm font-medium text-destructive">Unable to load storage data</p>
+    <p className="max-w-[240px] text-xs text-muted-foreground">{message}</p>
   </div>
 );
 

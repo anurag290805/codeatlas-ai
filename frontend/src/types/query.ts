@@ -28,21 +28,33 @@ export interface ChatMessage {
   readonly status?: "pending" | "streaming" | "complete" | "error";
 }
 
-/** Payload sent when asking a natural-language question about a repository. */
+/** Payload accepted by the FastAPI repository query endpoint. */
 export interface QueryRequest {
-  readonly repositoryId: ID;
-  readonly question: string;
-  readonly conversationId?: ID;
-  readonly maxResults?: number;
+  readonly repository_id: number;
+  readonly query: string;
+  readonly top_k?: number;
 }
 
-/** Complete (non-streamed) response to a query request. */
+/** Citation shape returned by the FastAPI query endpoint. */
+export interface QueryCitation {
+  readonly file_path: string;
+  readonly start_line: number;
+  readonly end_line: number;
+  readonly symbol_name?: string | null;
+  readonly code_preview?: string | null;
+  readonly relevance_score?: number | null;
+}
+
+/** Complete (non-streamed) response returned by the query endpoint. */
 export interface QueryResponse {
+  readonly repository_id: number | string;
+  readonly query: string;
   readonly answer: string;
-  readonly citations: readonly Citation[];
-  readonly conversationId: ID;
-  readonly messageId: ID;
-  readonly latencyMs?: number;
+  readonly citations: readonly QueryCitation[];
+  readonly provider: string;
+  readonly model: string;
+  readonly latency_seconds: number;
+  readonly token_usage?: Readonly<Record<string, number>> | null;
 }
 
 /** A single incremental chunk of a streamed AI answer. */

@@ -23,6 +23,7 @@ export interface CommitActivityChartProps {
   /** Commit activity for the repository, ordered chronologically. */
   data: CommitActivityDataPoint[];
   isLoading?: boolean;
+  error?: string;
   className?: string;
 }
 
@@ -63,6 +64,7 @@ const CommitActivityTooltip: FC<{
 export const CommitActivityChart: FC<CommitActivityChartProps> = ({
   data,
   isLoading = false,
+  error,
   className,
 }) => {
   const chartData = useMemo(
@@ -85,6 +87,8 @@ export const CommitActivityChart: FC<CommitActivityChartProps> = ({
       <CardContent>
         {isLoading ? (
           <CommitActivityChartSkeleton />
+        ) : error ? (
+          <ChartErrorState message={error} />
         ) : isEmpty ? (
           <CommitActivityChartEmptyState />
         ) : (
@@ -178,6 +182,13 @@ const CommitActivityChartEmptyState: FC = () => (
     <p className="max-w-[220px] text-xs text-muted-foreground">
       Commit history hasn&apos;t been indexed for this repository yet.
     </p>
+  </div>
+);
+
+const ChartErrorState: FC<{ message: string }> = ({ message }) => (
+  <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+    <p className="text-sm font-medium text-destructive">Unable to load commit data</p>
+    <p className="max-w-[240px] text-xs text-muted-foreground">{message}</p>
   </div>
 );
 

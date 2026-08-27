@@ -257,6 +257,9 @@ def update_repository_indexing_status(
         repository.total_embeddings = total_embeddings
     if mark_indexed_now:
         repository.last_indexed_at = _utcnow()
+    repository.last_index_attempt_at = _utcnow()
+    if hasattr(repository, "last_indexing_error"):
+        repository.last_indexing_error = None
     repository.updated_at = _utcnow()
 
     try:
@@ -659,13 +662,21 @@ def count_repositories_by_status(session: Session, *, status: str) -> int:
 
 def update_repository_status(session: Session, repository_id: int | str, status: str, **fields: object) -> Repository | None:
     """Compatibility wrapper for status updates from orchestration routes."""
-    return update_repository_indexing_status(
+    repository = update_repository_indexing_status(
         session,
         int(repository_id),
         str(getattr(status, "value", status)),
-        total_files=fields.get("indexed_file_count"),
-        total_chunks=fields.get("indexed_chunk_count"),
+        total_files=fields.get("total_files"),
+        total_chunks=fields.get("total_chunks"),
+        total_embeddings=fields.get("total_embeddings"),
+        mark_indexed_now=str(getattr(status, "value", status)) == "ready",
     )
+    if repository is not None and "error_message" in fields:
+        repository.last_indexing_error = str(fields["error_message"])
+        repository.updated_at = _utcnow()
+        session.commit()
+        session.refresh(repository)
+    return repository
 
 
 def replace_indexed_files(session: Session, repository_id: int | str, parsed_files: Sequence[object]) -> list[IndexedFile]:
@@ -690,3 +701,20 @@ def replace_indexed_files(session: Session, repository_id: int | str, parsed_fil
             }
         )
     return bulk_create_indexed_files(session, records) if records else []
+
+
+def clear_indexed_files(session: Session, repository_id: int | str) -> int:
+    """Delete all indexed-file rows for a repository in one transaction."""
+    repository_id = int(repository_id)
+    statement = select(IndexedFile).where(IndexedFile.repository_id == repository_id)
+    files = list(session.execute(statement).scalars().all())
+    for indexed_file in files:
+        session.delete(indexed_file)
+    try:
+        session.commit()
+    except SQLAlchemyError:
+        session.rollback()
+        logger.error("Failed to clear indexed files for repository_id=%s", repository_id)
+        raise
+    logger.info("Cleared %d indexed file(s) for repository_id=%s", len(files), repository_id)
+    return len(files)

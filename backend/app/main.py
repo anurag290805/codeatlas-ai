@@ -20,9 +20,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from app.api.routes_graph import router as graph_router
+from app.api.routes_analytics import router as analytics_router
 from app.api.routes_query import router as query_router
 from app.api.routes_repo import router as repo_router
 from app.config import get_settings
@@ -86,6 +88,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 def _register_middleware(app: FastAPI) -> None:
     """Register all application middleware, in outermost-to-innermost order."""
     settings = get_settings()
+
+    logger.info("CORS origins loaded: %s", settings.cors_allowed_origins)
 
     app.add_middleware(
         CORSMiddleware,
@@ -164,7 +168,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
             request,
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "Request validation failed.",
-            detail=exc.errors(),
+            detail=jsonable_encoder(exc.errors()),
         )
 
     @app.exception_handler(HTTPException)
@@ -199,6 +203,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(repo_router, prefix=api_prefix)
     app.include_router(query_router, prefix=api_prefix)
     app.include_router(graph_router, prefix=api_prefix)
+    app.include_router(analytics_router, prefix=api_prefix)
 
     logger.info("Routers registered prefix=%s", api_prefix)
 

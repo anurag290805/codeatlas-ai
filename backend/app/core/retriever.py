@@ -145,7 +145,15 @@ class RetrievalResult:
     @property
     def assembled_context(self) -> str:
         """Return retrieved code as a prompt-ready context string."""
-        return "\n\n".join(chunk.code for chunk in self.context.chunks)
+        sections = []
+
+        for chunk in self.context.chunks:
+            sections.append(
+                f"File: {chunk.citation.file_path}\n\n"
+                f"{chunk.code[:800]}"
+            )
+
+        return "\n\n" + ("\n\n" + "-" * 80 + "\n\n").join(sections)
 
     @property
     def citations(self) -> list[CitationReference]:

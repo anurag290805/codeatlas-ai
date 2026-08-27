@@ -8,6 +8,7 @@ and does not depend on a locally compiled ``languages.so``.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -50,6 +51,27 @@ class FakeNode:
         self.end_point = (end_line - 1, len(lines[end_line - 1].encode("utf-8")))
         self.start_byte = line_starts[start_line - 1]
         self.end_byte = line_starts[end_line] if end_line < len(line_starts) else len(source.encode("utf-8"))
+        if node_type in {"identifier", "type_identifier", "property_identifier"}:
+            # Real tree-sitter field nodes span only the identifier, not its
+            # containing declaration. Preserve that contract in the double.
+            tokens = list(re.finditer(r"[A-Za-z_$][A-Za-z0-9_$]*", lines[start_line - 1]))
+            if tokens:
+                words = [token.group(0) for token in tokens]
+                keyword = next(
+                    (word for word in ("def", "function", "class", "interface", "enum") if word in words),
+                    None,
+                )
+                if keyword is not None:
+                    token = tokens[words.index(keyword) + 1]
+                elif words[0] in {"const", "let", "var"} or words[0] == "async":
+                    token = tokens[1]
+                else:
+                    token = tokens[-1]
+                line_offset = line_starts[start_line - 1]
+                self.start_byte = line_offset + len(lines[start_line - 1][: token.start()].encode("utf-8"))
+                self.end_byte = line_offset + len(lines[start_line - 1][: token.end()].encode("utf-8"))
+                self.start_point = (start_line - 1, token.start())
+                self.end_point = (start_line - 1, token.end())
 
     def child_by_field_name(self, name: str) -> FakeNode | None:
         return self._fields.get(name)
@@ -188,13 +210,13 @@ def javascript_tree(source: str, *, typescript: bool = False) -> FakeTree:
     name_fetch = make_node("identifier", source, 3, 3)
     name_controller = make_node("identifier", source, 7, 7)
     name_load = make_node("property_identifier", source, 8, 8)
-    name_transform = make_node("identifier", source, 12, 12)
+    name_transform = make_node("identifier", source, 11, 11)
     fetch = make_node("function_declaration", source, 3, 5, fields={"name": name_fetch})
     method = make_node("method_definition", source, 8, 8, fields={"name": name_load})
     class_body = make_node("class_body", source, 8, 8, children=[method])
     controller = make_node("class_declaration", source, 7, 8, children=[class_body], fields={"name": name_controller, "body": class_body})
-    declarator = make_node("variable_declarator", source, 12, 12, fields={"name": name_transform, "value": make_node("arrow_function", source, 12, 12)})
-    declaration = make_node("lexical_declaration", source, 12, 12, children=[declarator])
+    declarator = make_node("variable_declarator", source, 11, 11, fields={"name": name_transform, "value": make_node("arrow_function", source, 11, 11)})
+    declaration = make_node("lexical_declaration", source, 11, 11, children=[declarator])
     import_node = make_node("import_statement", source, 1, 1)
     export = make_node("export_statement", source, 3, 5, children=[fetch], fields={"declaration": fetch})
     children = [import_node, export, controller, declaration]
@@ -210,7 +232,7 @@ def javascript_tree(source: str, *, typescript: bool = False) -> FakeTree:
 
 
 class TestRepositoryTraversal:
-    def test_recursive_discovery_prunes_ignored_directories(repository: Path) -> None:
+    def test_recursive_discovery_prunes_ignored_directories(self, repository: Path) -> None:
         (repository / "src" / "nested").mkdir(parents=True)
         (repository / "node_modules" / "ignored").mkdir(parents=True)
         (repository / ".git").mkdir()
@@ -223,7 +245,7 @@ class TestRepositoryTraversal:
 
         assert paths == {Path("src/main.py"), Path("src/nested/util.ts")}
 
-    def test_traversal_includes_hidden_files_and_empty_directories(repository: Path) -> None:
+    def test_traversal_includes_hidden_files_and_empty_directories(self, repository: Path) -> None:
         (repository / ".hidden").mkdir(parents=True)
         (repository / "empty").mkdir()
         hidden = repository / ".hidden" / "module.py"
@@ -231,7 +253,7 @@ class TestRepositoryTraversal:
 
         assert list(CodeParser._iter_repository_files(repository)) == [hidden]
 
-    def test_mixed_repository_counts_supported_and_unsupported_files(repository: Path) -> None:
+    def test_mixed_repository_counts_supported_and_unsupported_files(self, repository: Path) -> None:
         repository.mkdir()
         (repository / "a.py").write_text("", encoding="utf-8")
         (repository / "b.js").write_text("", encoding="utf-8")
@@ -244,7 +266,7 @@ class TestRepositoryTraversal:
         assert (result.files_parsed, result.files_skipped, result.files_failed) == (2, 1, 0)
         assert result.errors == []
 
-    def test_symlink_file_is_yielded_without_following_directory_links(repository: Path) -> None:
+    def test_symlink_file_is_yielded_without_following_directory_links(self, repository: Path) -> None:
         repository.mkdir()
         target = repository / "target.py"
         link = repository / "alias.py"
@@ -258,9 +280,11 @@ class TestRepositoryTraversal:
 
 
 class TestPythonParsing:
-    def test_extracts_imports_classes_methods_nested_functions_and_decorators(python_source: str) -> None:
+    def test_extracts_imports_classes_methods_nested_functions_and_decorators(self, tmp_path: Path, python_source: str) -> None:
+        path = tmp_path / "service.py"
+        path.write_text(python_source, encoding="utf-8")
         parser = parser_for(python_tree(python_source))
-        result = parser.parse_file(42, Path("/tmp/repo/service.py"), Path("/tmp/repo"))
+        result = parser.parse_file(42, path, tmp_path)
 
         assert result.error is None
         assert result.programming_language is ProgrammingLanguage.PYTHON
@@ -283,9 +307,11 @@ class TestPythonParsing:
 
 
 class TestJavaScriptAndTypeScriptParsing:
-    def test_extracts_exports_classes_methods_and_arrow_functions(javascript_source: str) -> None:
+    def test_extracts_exports_classes_methods_and_arrow_functions(self, tmp_path: Path, javascript_source: str) -> None:
+        path = tmp_path / "app.js"
+        path.write_text(javascript_source, encoding="utf-8")
         parser = parser_for(javascript_tree(javascript_source))
-        result = parser.parse_file(3, Path("/tmp/repo/app.js"), Path("/tmp/repo"))
+        result = parser.parse_file(3, path, tmp_path)
 
         assert [(c.symbol_type, c.symbol_name, c.parent_symbol) for c in result.chunks] == [
             (SymbolType.FUNCTION, "fetchData", None),
@@ -296,9 +322,11 @@ class TestJavaScriptAndTypeScriptParsing:
         assert result.chunks[0].source_code.startswith("export function")
         assert result.chunks[0].imports == ("import { client } from './client';",)
 
-    def test_extracts_typescript_interfaces_enums_and_functions(typescript_source: str) -> None:
+    def test_extracts_typescript_interfaces_enums_and_functions(self, tmp_path: Path, typescript_source: str) -> None:
+        path = tmp_path / "types.ts"
+        path.write_text(typescript_source, encoding="utf-8")
         parser = parser_for(javascript_tree(typescript_source, typescript=True))
-        result = parser.parse_file(4, Path("/tmp/repo/types.ts"), Path("/tmp/repo"))
+        result = parser.parse_file(4, path, tmp_path)
 
         assert result.programming_language is ProgrammingLanguage.TYPESCRIPT
         assert [chunk.symbol_type for chunk in result.chunks[:2]] == [SymbolType.INTERFACE, SymbolType.ENUM]
@@ -306,10 +334,12 @@ class TestJavaScriptAndTypeScriptParsing:
 
 
 class TestChunkGeneration:
-    def test_chunk_metadata_checksums_and_stable_ids(python_source: str) -> None:
+    def test_chunk_metadata_checksums_and_stable_ids(self, tmp_path: Path, python_source: str) -> None:
+        path = tmp_path / "service.py"
+        path.write_text(python_source, encoding="utf-8")
         parser = parser_for(python_tree(python_source))
-        first = parser.parse_file(9, Path("/tmp/repo/service.py"), Path("/tmp/repo"))
-        second = parser.parse_file(9, Path("/tmp/repo/service.py"), Path("/tmp/repo"))
+        first = parser.parse_file(9, path, tmp_path)
+        second = parser.parse_file(9, path, tmp_path)
 
         assert all(isinstance(chunk, CodeChunk) for chunk in first.chunks)
         assert [chunk.chunk_id for chunk in first.chunks] == [chunk.chunk_id for chunk in second.chunks]
@@ -318,14 +348,14 @@ class TestChunkGeneration:
         assert all(chunk.relative_path == "service.py" and chunk.repository_id == 9 for chunk in first.chunks)
         assert all(chunk.start_line <= chunk.end_line for chunk in first.chunks)
 
-    def test_chunk_ids_change_when_identity_changes() -> None:
+    def test_chunk_ids_change_when_identity_changes(self) -> None:
         raw = RawChunk(SymbolType.FUNCTION, "run", None, 1, 2, "def run(): pass")
         first = CodeParser._build_chunk_id(1, "a.py", raw)
         changed_file = CodeParser._build_chunk_id(1, "b.py", raw)
         changed_repo = CodeParser._build_chunk_id(2, "a.py", raw)
         assert len({first, changed_file, changed_repo}) == 3
 
-    def test_empty_and_comment_only_files_produce_valid_empty_results(tmp_path: Path) -> None:
+    def test_empty_and_comment_only_files_produce_valid_empty_results(self, tmp_path: Path) -> None:
         for name, text in (("empty.py", ""), ("comments.py", "# Unicode ✓\n# no symbols\n")):
             path = tmp_path / name
             path.write_text(text, encoding="utf-8")
@@ -334,7 +364,7 @@ class TestChunkGeneration:
             assert result.error is None
             assert result.chunks == []
 
-    def test_unicode_source_is_preserved_in_chunk_text(tmp_path: Path) -> None:
+    def test_unicode_source_is_preserved_in_chunk_text(self, tmp_path: Path) -> None:
         source = "def café():\n    return '😀'\n"
         path = tmp_path / "unicode.py"
         path.write_text(source, encoding="utf-8")
@@ -345,7 +375,7 @@ class TestChunkGeneration:
 
 
 class TestParserErrors:
-    def test_missing_grammar_is_a_configuration_error(tmp_path: Path) -> None:
+    def test_missing_grammar_is_a_configuration_error(self, tmp_path: Path) -> None:
         parser = CodeParser(tree_sitter_languages_dir=tmp_path / "missing")
         with pytest.raises(LanguageGrammarNotAvailableError, match="languages.so"):
             parser._get_parser(parser_module._LANGUAGE_SPECS[0])
@@ -391,10 +421,10 @@ class TestParserErrors:
         parser = parser_for(empty_tree(""))
         original = parser.parse_file
 
-        def parse_file_with_one_failure(repository_id: int, path: Path, root: Path) -> FileParseResult:
+        def parse_file_with_one_failure(repository_id: int, path: Path, root: Path, spec=None) -> FileParseResult:
             if path.name == "bad.py":
                 return FileParseResult("bad.py", ProgrammingLanguage.PYTHON, error="bad")
-            return original(repository_id, path, root)
+            return original(repository_id, path, root, spec)
 
         mocker.patch.object(parser, "parse_file", side_effect=parse_file_with_one_failure)
         result = parser.parse_repository(1, tmp_path)
@@ -403,7 +433,7 @@ class TestParserErrors:
 
 
 class TestParserPerformance:
-    def test_traversal_handles_many_files_without_special_casing(tmp_path: Path) -> None:
+    def test_traversal_handles_many_files_without_special_casing(self, tmp_path: Path) -> None:
         for index in range(200):
             path = tmp_path / f"module_{index}.py"
             path.write_text("", encoding="utf-8")

@@ -1,30 +1,28 @@
 // src/types/health.ts
 
-import type { Timestamp } from "./common";
-
-/** Overall health classification for the backend or one of its dependencies. */
+/** Status values emitted by the backend liveness and query probes. */
 export type HealthStatus = "healthy" | "degraded" | "unhealthy";
 
-/** Backend build/version metadata surfaced for diagnostics. */
-export interface BackendVersion {
+/** Exact response from GET /health. */
+export interface BackendHealthResponse {
+  readonly status: "healthy";
+}
+
+/** Exact response from GET /api/query/health. */
+export interface QueryHealthResponse {
+  readonly status: HealthStatus;
+  readonly retriever_ready: boolean;
+  readonly ollama_reachable: boolean;
+  readonly model_available: boolean;
+  readonly llm_provider: string;
+  readonly llm_model: string;
+  readonly message: string;
+}
+
+/** Exact response from GET /version. */
+export interface VersionResponse {
   readonly version: string;
-  readonly commitSha?: string;
-  readonly buildDate?: Timestamp;
+  readonly environment: string;
 }
 
-/** Health of a single backend dependency (database, vector store, queue, etc.). */
-export interface SystemHealth {
-  readonly name: string;
-  readonly status: HealthStatus;
-  readonly latencyMs?: number;
-  readonly message?: string;
-}
-
-/** Payload returned by the backend's health-check endpoint. */
-export interface HealthResponse {
-  readonly status: HealthStatus;
-  readonly version: BackendVersion;
-  readonly uptimeSeconds: number;
-  readonly checkedAt: Timestamp;
-  readonly dependencies: readonly SystemHealth[];
-}
+export type HealthResponse = QueryHealthResponse;

@@ -44,6 +44,10 @@ export interface DependencyGraphProps {
    * search/filter UI to be layered on top of this component.
    */
   nodeFilter?: (node: GraphNode) => boolean;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
   className?: string;
 }
 
@@ -84,7 +88,7 @@ const FileNode: FC<NodeProps<GraphNode>> = ({ data, selected }) => {
 // `nodeTypes` / `edgeTypes`, so these are declared outside the component and
 // designed to accept further variants as the visualization grows.
 const nodeTypes: NodeTypes = {
-  file: FileNode,
+  code: FileNode,
 };
 
 const edgeTypes: EdgeTypes = {};
@@ -93,15 +97,19 @@ const DependencyGraphCanvas: FC<DependencyGraphProps> = ({
   repositoryId,
   applyLayout,
   nodeFilter,
+  searchQuery = "",
+  onSearchQueryChange,
+  onRefresh,
+  isRefreshing = false,
   className,
 }) => {
   const { nodes: sourceNodes, edges: sourceEdges, isLoading, isError, isEmpty } =
     useDependencyGraph(repositoryId);
 
-  const { fitView, zoomIn, zoomOut, setViewport } = useReactFlow();
+  const { fitView, zoomIn, zoomOut, setViewport, setCenter } = useReactFlow();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdge>([]);
+  const [, setEdges, onEdgesChange] = useEdgesState<GraphEdge>([]);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [showControls, setShowControls] = useState(true);
@@ -109,35 +117,68 @@ const DependencyGraphCanvas: FC<DependencyGraphProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const filteredNodes = useMemo((): GraphNode[] => {
-    const withType: GraphNode[] = sourceNodes.map((node) => ({
-      ...node,
-      type: (node.type ?? "file") as GraphNode["type"],
-      width: node.width ?? undefined,
-    }));
-    return nodeFilter ? withType.filter(nodeFilter) : withType;
-  }, [sourceNodes, nodeFilter]);
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    return sourceNodes.filter((node) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        node.data.label.toLowerCase().includes(normalizedSearch) ||
+        node.data.filePath.toLowerCase().includes(normalizedSearch);
+      return matchesSearch && (!nodeFilter || nodeFilter(node));
+    });
+  }, [sourceNodes, nodeFilter, searchQuery]);
+
+  const visibleNodeIds = useMemo(
+    () => new Set(filteredNodes.map((node) => node.id)),
+    [filteredNodes],
+  );
+
+  const visibleEdges = useMemo(
+    () => sourceEdges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)),
+    [sourceEdges, visibleNodeIds],
+  );
 
   const layoutedNodes = useMemo(
     () =>
-      applyLayout ? applyLayout(filteredNodes, sourceEdges) : filteredNodes,
-    [applyLayout, filteredNodes, sourceEdges],
+      applyLayout
+        ? applyLayout(filteredNodes, visibleEdges)
+        : filteredNodes.map((node, index) => ({
+            ...node,
+            position: { x: (index % 6) * 240, y: Math.floor(index / 6) * 140 },
+          })),
+    [applyLayout, filteredNodes, visibleEdges],
   );
 
   useEffect(() => {
     setNodes(layoutedNodes);
-    setEdges(sourceEdges);
-  }, [layoutedNodes, sourceEdges, setNodes, setEdges]);
+    setEdges(visibleEdges);
+  }, [layoutedNodes, visibleEdges, setNodes, setEdges]);
 
   useEffect(() => {
-    if (!isLoading && nodes.length > 0) {
+    if (!isLoading && layoutedNodes.length > 0) {
       const raf = requestAnimationFrame(() => fitView({ padding: 0.2, duration: 300 }));
       return () => cancelAnimationFrame(raf);
     }
-  }, [isLoading, nodes.length, fitView]);
+  }, [isLoading, layoutedNodes.length, fitView]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedNode(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleNodeClick: NodeMouseHandler<GraphNode> = useCallback((_event, node) => {
     setSelectedNode(node);
   }, []);
+
+  const handleNodeDoubleClick: NodeMouseHandler<GraphNode> = useCallback(
+    (_event, node) => {
+      setSelectedNode(node);
+      setCenter(node.position.x + 80, node.position.y + 40, { zoom: 1.25, duration: 350 });
+    },
+    [setCenter],
+  );
 
   const handlePaneClick = useCallback(() => {
     setSelectedNode(null);
@@ -154,6 +195,46 @@ const DependencyGraphCanvas: FC<DependencyGraphProps> = ({
   const handleFullscreen = useCallback(() => {
     setIsFullscreen((previous) => !previous);
   }, []);
+
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedNode) return new Set<string>();
+    const ids = new Set<string>([selectedNode.id]);
+    for (const edge of visibleEdges) {
+      if (edge.source === selectedNode.id) ids.add(edge.target);
+      if (edge.target === selectedNode.id) ids.add(edge.source);
+    }
+    return ids;
+  }, [selectedNode, visibleEdges]);
+
+  const renderedEdges = useMemo(
+    () =>
+      visibleEdges.map((edge) => {
+        const active =
+          !selectedNode || edge.source === selectedNode.id || edge.target === selectedNode.id;
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            opacity: active ? 1 : 0.18,
+            stroke: active ? "var(--primary)" : "var(--muted-foreground)",
+          },
+          animated: Boolean(selectedNode && active),
+        };
+      }),
+    [visibleEdges, selectedNode],
+  );
+
+  const renderedNodes = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        style: {
+          ...node.style,
+          opacity: selectedNode && !connectedNodeIds.has(node.id) ? 0.35 : 1,
+        },
+      })),
+    [nodes, selectedNode, connectedNodeIds],
+  );
 
   if (isLoading) {
     return <GraphLoadingState className={className} />;
@@ -176,11 +257,12 @@ const DependencyGraphCanvas: FC<DependencyGraphProps> = ({
       )}
     >
       <ReactFlow<GraphNode, GraphEdge>
-        nodes={nodes}
-        edges={edges}
+        nodes={renderedNodes}
+        edges={renderedEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
         onPaneClick={handlePaneClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -225,6 +307,10 @@ const DependencyGraphCanvas: FC<DependencyGraphProps> = ({
             onToggleControls={() => setShowControls((v) => !v)}
             onToggleGrid={() => setShowGrid((v) => !v)}
             onFullscreen={handleFullscreen}
+            onRefresh={onRefresh}
+            isRefreshing={isRefreshing}
+            searchQuery={searchQuery}
+            onSearchChange={onSearchQueryChange ?? (() => undefined)}
             showMiniMap={showMiniMap}
             showControls={showControls}
             showGrid={showGrid}

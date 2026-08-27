@@ -24,6 +24,7 @@ export interface ChunkChartProps {
   /** Indexing statistics for the repository's chunked content. */
   data: ChunkStatistics;
   isLoading?: boolean;
+  error?: string;
   className?: string;
 }
 
@@ -60,6 +61,7 @@ const ChunkTooltip: FC<{ active?: boolean; payload?: TooltipPayloadItem[] }> = (
 export const ChunkChart: FC<ChunkChartProps> = ({
   data,
   isLoading = false,
+  error,
   className,
 }) => {
   const chartData = useMemo<ChunkDatum[]>(
@@ -76,19 +78,19 @@ export const ChunkChart: FC<ChunkChartProps> = ({
         value: data.embeddedChunks,
         color: "var(--chart-2)",
       },
-      {
+      data.pendingChunks == null ? null : {
         key: "pending",
         name: "Pending",
         value: data.pendingChunks,
         color: "var(--chart-4)",
       },
-      {
+      data.failedChunks == null ? null : {
         key: "failed",
         name: "Failed",
         value: data.failedChunks,
         color: "var(--destructive)",
       },
-    ],
+    ].filter((entry): entry is ChunkDatum => entry !== null),
     [data],
   );
 
@@ -104,6 +106,8 @@ export const ChunkChart: FC<ChunkChartProps> = ({
       <CardContent>
         {isLoading ? (
           <ChunkChartSkeleton />
+        ) : error ? (
+          <ChartErrorState message={error} />
         ) : isEmpty ? (
           <ChunkChartEmptyState />
         ) : (
@@ -174,6 +178,13 @@ const ChunkChartEmptyState: FC = () => (
     <p className="max-w-[220px] text-xs text-muted-foreground">
       Indexing statistics will appear once analysis has started.
     </p>
+  </div>
+);
+
+const ChartErrorState: FC<{ message: string }> = ({ message }) => (
+  <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+    <p className="text-sm font-medium text-destructive">Unable to load chunk data</p>
+    <p className="max-w-[240px] text-xs text-muted-foreground">{message}</p>
   </div>
 );
 

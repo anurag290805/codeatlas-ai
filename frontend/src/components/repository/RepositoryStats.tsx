@@ -38,7 +38,7 @@ const STAT_DEFINITIONS: StatDefinition[] = [
 
 interface StatCardProps {
   label: string;
-  value: number;
+  value: number | null;
   icon: LucideIcon;
   delay: number;
 }
@@ -58,7 +58,7 @@ function StatCard({ label, value, icon: Icon, delay }: StatCardProps) {
           <Icon className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-foreground" />
         </div>
         <p className="mt-1.5 text-xl font-semibold tracking-tight text-foreground">
-          {value.toLocaleString()}
+          {value == null ? "—" : value.toLocaleString()}
         </p>
       </Card>
     </motion.div>

@@ -10,6 +10,8 @@ import {
   SlidersHorizontal,
   Grid3x3,
   Expand,
+  RefreshCw,
+  Search,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -39,6 +41,10 @@ export interface GraphToolbarProps {
   onToggleGrid: () => void;
   /** Toggle fullscreen presentation of the graph. */
   onFullscreen?: () => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
   /** Whether the minimap is currently visible. */
   showMiniMap: boolean;
   /** Whether the controls overlay is currently visible. */
@@ -79,6 +85,10 @@ export const GraphToolbar: FC<GraphToolbarProps> = ({
   showControls,
   showGrid,
   isFullscreen = false,
+  onRefresh,
+  isRefreshing = false,
+  searchQuery,
+  onSearchChange,
   className,
 }) => {
   const toggles: ToggleAction[] = [
@@ -115,6 +125,17 @@ export const GraphToolbar: FC<GraphToolbarProps> = ({
         role="toolbar"
         aria-label="Graph view controls"
       >
+        <div className="hidden items-center gap-1.5 px-1 sm:flex">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={searchQuery}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search nodes"
+            aria-label="Search graph nodes"
+            className="h-8 w-36 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+        <Separator orientation="vertical" className="mx-1 hidden h-5 sm:block" />
         <ToolbarButton label="Zoom in" onClick={onZoomIn}>
           <ZoomIn className="h-4 w-4" />
         </ToolbarButton>
@@ -150,6 +171,9 @@ export const GraphToolbar: FC<GraphToolbarProps> = ({
           active={isFullscreen}
         >
           <Expand className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton label="Refresh graph" onClick={onRefresh} disabled={!onRefresh || isRefreshing}>
+          <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
         </ToolbarButton>
       </div>
     </TooltipProvider>

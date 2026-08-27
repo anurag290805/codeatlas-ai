@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RepositoryStatus, type RepositoryStatusValue } from "@/components/dashboard/RepositoryStatus";
+import { formatLanguage } from "@/utils/format";
 
 export type RepositoryVisibility = "public" | "private";
 
@@ -75,10 +76,15 @@ export function RepositoryCard({
   }
 
   const VisibilityIcon = visibility === "private" ? Lock : Globe;
+  const accentClass = status === "ready"
+    ? "border-emerald-500/25 hover:border-emerald-500/50"
+    : status === "error" || status === "index_failed" || status === "failed_import"
+      ? "border-rose-500/25 hover:border-rose-500/50"
+      : "border-amber-500/25 hover:border-amber-500/50";
 
   return (
     <motion.div whileHover={{ y: -2 }} transition={{ duration: 0.15, ease: "easeOut" }}>
-      <Card className={className}>
+      <Card className={`transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-lg ${accentClass} ${className ?? ""}`}>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
@@ -125,8 +131,8 @@ export function RepositoryCard({
               {visibility === "private" ? "Private" : "Public"}
             </Badge>
             {language && (
-              <Badge variant="outline" className="font-normal">
-                {language}
+              <Badge variant="outline" className="font-normal before:mr-1.5 before:h-1.5 before:w-1.5 before:rounded-full before:bg-primary before:content-['']">
+                {formatLanguage(language)}
               </Badge>
             )}
             <Badge variant="outline" className="font-normal">

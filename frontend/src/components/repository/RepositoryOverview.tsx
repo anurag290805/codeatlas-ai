@@ -1,85 +1,33 @@
 import { motion } from "framer-motion";
 import {
   CalendarDays,
-  FileStack,
+  GitBranch,
+  HardDrive,
+  Languages,
   Sparkles,
-  Waypoints,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  CircleDashed,
-  type LucideIcon,
+  Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-
-export type EmbeddingStatus = "pending" | "in_progress" | "complete" | "failed";
+import type { Repository } from "@/types";
 
 interface RepositoryOverviewProps {
-  description?: string | null;
-  importedAt: string;
-  indexedFileCount: number;
-  totalFileCount: number;
-  embeddingStatus: EmbeddingStatus;
-  graphAvailable: boolean;
+  repository: Repository;
   className?: string;
 }
 
-interface EmbeddingStatusConfig {
-  label: string;
-  icon: LucideIcon;
-  className: string;
-  spin?: boolean;
-}
-
-const EMBEDDING_STATUS_CONFIG: Record<EmbeddingStatus, EmbeddingStatusConfig> = {
-  pending: {
-    label: "Not started",
-    icon: CircleDashed,
-    className: "bg-muted text-muted-foreground",
-  },
-  in_progress: {
-    label: "Generating",
-    icon: Loader2,
-    className: "bg-blue-500/10 text-blue-500",
-    spin: true,
-  },
-  complete: {
-    label: "Up to date",
-    icon: CheckCircle2,
-    className: "bg-emerald-500/10 text-emerald-500",
-  },
-  failed: {
-    label: "Failed",
-    icon: XCircle,
-    className: "bg-destructive/10 text-destructive",
-  },
-};
-
-function formatImportDate(isoDate: string): string {
+function formatDate(value?: string): string {
+  if (!value) return "Unavailable";
   return new Intl.DateTimeFormat("en", {
     year: "numeric",
     month: "short",
     day: "numeric",
-  }).format(new Date(isoDate));
+  }).format(new Date(value));
 }
 
-export function RepositoryOverview({
-  description,
-  importedAt,
-  indexedFileCount,
-  totalFileCount,
-  embeddingStatus,
-  graphAvailable,
-  className,
-}: RepositoryOverviewProps) {
-  const embedding = EMBEDDING_STATUS_CONFIG[embeddingStatus];
-  const EmbeddingIcon = embedding.icon;
-  const indexProgress =
-    totalFileCount > 0
-      ? Math.min(100, Math.round((indexedFileCount / totalFileCount) * 100))
-      : 0;
+export function RepositoryOverview({ repository, className }: RepositoryOverviewProps) {
+  const languages = repository.statistics?.languageCount;
+  const branches = repository.branches ?? [];
 
   return (
     <motion.div
@@ -90,75 +38,82 @@ export function RepositoryOverview({
     >
       <Card className="border-border/60">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Overview</CardTitle>
+          <CardTitle className="text-base font-semibold">Repository Overview</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {description?.trim() ? description : "No description provided."}
+            {repository.description?.trim() || "No description provided."}
           </p>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <FileStack className="h-3.5 w-3.5" />
-                Indexed Files
-              </div>
-              <p className="text-sm font-semibold text-foreground">
-                {indexedFileCount.toLocaleString()} / {totalFileCount.toLocaleString()}
-              </p>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{ width: `${indexProgress}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Sparkles className="h-3.5 w-3.5" />
-                AI Embeddings
-              </div>
-              <Badge
-                variant="outline"
-                className={cn("gap-1 border-transparent font-normal", embedding.className)}
-              >
-                <EmbeddingIcon className={cn("h-3 w-3", embedding.spin && "animate-spin")} />
-                {embedding.label}
-              </Badge>
-            </div>
-
-            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Waypoints className="h-3.5 w-3.5" />
-                Dependency Graph
-              </div>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "gap-1 border-transparent font-normal",
-                  graphAvailable
-                    ? "bg-emerald-500/10 text-emerald-500"
-                    : "bg-muted text-muted-foreground",
-                )}
-              >
-                {graphAvailable ? (
-                  <CheckCircle2 className="h-3 w-3" />
-                ) : (
-                  <CircleDashed className="h-3 w-3" />
-                )}
-                {graphAvailable ? "Available" : "Not generated"}
-              </Badge>
-            </div>
-
-            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <CalendarDays className="h-3.5 w-3.5" />
-                Imported
-              </div>
-              <p className="text-sm font-semibold text-foreground">
-                {formatImportDate(importedAt)}
+                Last indexed
               </p>
+              <p className="mt-1.5 text-sm font-semibold">{formatDate(repository.lastIndexedAt)}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Languages className="h-3.5 w-3.5" />
+                Languages
+              </p>
+              <p className="mt-1.5 text-sm font-semibold">{languages ?? "—"}</p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <GitBranch className="h-3.5 w-3.5" />
+                Branches
+              </p>
+              <p className="mt-1.5 text-sm font-semibold">
+                {branches.length > 0 ? branches.length : repository.statistics?.branchCount ?? "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <HardDrive className="h-3.5 w-3.5" />
+                Repository size
+              </p>
+              <p className="mt-1.5 text-sm font-semibold">
+                {repository.sizeBytes > 0 ? `${repository.sizeBytes.toLocaleString()} bytes` : "—"}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5" />
+                Repository metrics
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {repository.metrics ? (
+                  <>
+                    <Badge variant="outline">{repository.metrics.stars.toLocaleString()} stars</Badge>
+                    <Badge variant="outline">{repository.metrics.forks.toLocaleString()} forks</Badge>
+                    <Badge variant="outline">{repository.metrics.openIssues.toLocaleString()} open issues</Badge>
+                  </>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Metrics unavailable</span>
+                )}
+              </div>
+            </div>
+            <div>
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Users className="h-3.5 w-3.5" />
+                Branch information
+              </h3>
+              {branches.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {branches.slice(0, 6).map((branch) => (
+                    <Badge key={branch.name} variant={branch.isDefault ? "default" : "outline"}>
+                      {branch.name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-sm text-muted-foreground">Branch details unavailable</span>
+              )}
             </div>
           </div>
         </CardContent>

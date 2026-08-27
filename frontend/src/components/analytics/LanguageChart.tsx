@@ -15,12 +15,14 @@ import { Braces } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { formatLanguage } from "@/utils/format";
 import type { LanguageDistributionItem } from "@/types/analytics";
 
 export interface LanguageChartProps {
   /** Language breakdown for the repository. */
   data: LanguageDistributionItem[];
   isLoading?: boolean;
+  error?: string;
   className?: string;
 }
 
@@ -61,10 +63,11 @@ const LanguageTooltip: FC<{ active?: boolean; payload?: TooltipPayloadItem[] }> 
 export const LanguageChart: FC<LanguageChartProps> = ({
   data,
   isLoading = false,
+  error,
   className,
 }) => {
   const chartData = useMemo(
-    () => [...data].sort((a, b) => b.percentage - a.percentage),
+    () => [...data].map((item) => ({ ...item, language: formatLanguage(item.language) })).sort((a, b) => b.percentage - a.percentage),
     [data],
   );
 
@@ -78,6 +81,8 @@ export const LanguageChart: FC<LanguageChartProps> = ({
       <CardContent>
         {isLoading ? (
           <LanguageChartSkeleton />
+        ) : error ? (
+          <ChartErrorState message={error} />
         ) : chartData.length === 0 ? (
           <LanguageChartEmptyState />
         ) : (
@@ -143,6 +148,13 @@ const LanguageChartEmptyState: FC = () => (
     <p className="max-w-[220px] text-xs text-muted-foreground">
       Language detection hasn&apos;t completed for this repository yet.
     </p>
+  </div>
+);
+
+const ChartErrorState: FC<{ message: string }> = ({ message }) => (
+  <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+    <p className="text-sm font-medium text-destructive">Unable to load language data</p>
+    <p className="max-w-[240px] text-xs text-muted-foreground">{message}</p>
   </div>
 );
 

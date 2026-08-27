@@ -1,6 +1,7 @@
+// src/app/App.tsx
 import { AppProviders } from "@/app/providers";
 
-export function App() {
+function App() {
   return <AppProviders />;
 }
 

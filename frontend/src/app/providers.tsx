@@ -2,6 +2,7 @@
 import { RouterProvider } from "react-router-dom";
 import { QueryProvider, ThemeProvider } from "@/providers";
 import { router } from "@/app/router";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 /**
  * Composes the application's global providers in the required order:
@@ -9,11 +10,5 @@ import { router } from "@/app/router";
  * (RouterProvider).
  */
 export function AppProviders() {
-  return (
-    <QueryProvider>
-      <ThemeProvider>
-        <RouterProvider router={router} />
-      </ThemeProvider>
-    </QueryProvider>
-  );
+  return <ErrorBoundary><QueryProvider><ThemeProvider><RouterProvider router={router} /></ThemeProvider></QueryProvider></ErrorBoundary>;
 }

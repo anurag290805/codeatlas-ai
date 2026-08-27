@@ -13,12 +13,16 @@ import type { FileContent, FileTreeNode } from "@/types";
 interface FileExplorerProps {
   /** Hierarchical file structure for the repository. */
   fileTree: FileTreeNode[];
-  /** File contents keyed by path, pre-loaded by the parent. */
-  fileContents: Record<string, FileContent>;
-  /** Path selected by default when the explorer first renders. */
-  defaultSelectedPath?: string;
+  /** Currently selected file path. */
+  selectedPath?: string;
+  /** File content returned by the repository file hook. */
+  selectedFile: FileContent | null;
+  /** True while the selected file is being fetched. */
+  isFileLoading?: boolean;
+  /** Error raised while loading the selected file. */
+  fileError?: unknown;
   /** Notified whenever the selected file changes. */
-  onFileSelect?: (path: string) => void;
+  onFileSelect: (path: string) => void;
   className?: string;
 }
 
@@ -32,18 +36,19 @@ interface FileExplorerProps {
  */
 export function FileExplorer({
   fileTree,
-  fileContents,
-  defaultSelectedPath,
+  selectedPath,
+  selectedFile,
+  isFileLoading = false,
+  fileError,
   onFileSelect,
   className,
 }: FileExplorerProps) {
-  const [selectedPath, setSelectedPath] = useState<string | undefined>(defaultSelectedPath);
-
-  const selectedFile = selectedPath ? (fileContents[selectedPath] ?? null) : null;
+  const [internalSelectedPath, setInternalSelectedPath] = useState<string | undefined>(selectedPath);
+  const activePath = selectedPath ?? internalSelectedPath;
 
   const handleSelectFile = (path: string) => {
-    setSelectedPath(path);
-    onFileSelect?.(path);
+    setInternalSelectedPath(path);
+    onFileSelect(path);
   };
 
   const emptyState = (
@@ -62,13 +67,19 @@ export function FileExplorer({
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel defaultSize={25} minSize={15} maxSize={45}>
             <div className="h-full overflow-y-auto border-r bg-muted/30">
-              <FileTree nodes={fileTree} selectedPath={selectedPath} onSelectFile={handleSelectFile} />
+              <FileTree nodes={fileTree} selectedPath={activePath} onSelectFile={handleSelectFile} />
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={75}>
             <div className="h-full overflow-y-auto bg-background">
-              {selectedFile ? <FileViewer file={selectedFile} /> : emptyState}
+              {activePath ? (
+                <FileViewer
+                  file={selectedFile}
+                  isLoading={isFileLoading}
+                  error={fileError}
+                />
+              ) : emptyState}
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -76,10 +87,12 @@ export function FileExplorer({
 
       <div className="flex flex-col gap-4 md:hidden">
         <div className="max-h-64 overflow-y-auto rounded-lg border bg-muted/30">
-          <FileTree nodes={fileTree} selectedPath={selectedPath} onSelectFile={handleSelectFile} />
+          <FileTree nodes={fileTree} selectedPath={activePath} onSelectFile={handleSelectFile} />
         </div>
         <div className="min-h-[16rem] overflow-y-auto rounded-lg border bg-background">
-          {selectedFile ? <FileViewer file={selectedFile} /> : emptyState}
+          {activePath ? (
+            <FileViewer file={selectedFile} isLoading={isFileLoading} error={fileError} />
+          ) : emptyState}
         </div>
       </div>
     </div>

@@ -7,18 +7,21 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
 
-from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DATA_DIR = _PROJECT_ROOT / "data"
+_ENV_FILES = (_PROJECT_ROOT / ".env", _PROJECT_ROOT / "backend" / ".env")
 
 
 class Settings(BaseSettings):
     """Validated application configuration loaded from ``.env`` and env vars."""
 
     model_config = SettingsConfigDict(
-        env_file=_PROJECT_ROOT / ".env",
+        # Load the root file first, then the backend-local file. Shell
+        # environment variables still override both files.
+        env_file=_ENV_FILES,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -34,14 +37,19 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", min_length=1)
     port: Annotated[int, Field(ge=1, le=65_535)] = 8000
     api_prefix: str = "/api"
-    cors_allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+        ]
+    )
     cors_allow_credentials: bool = True
-    trusted_hosts: list[str] = Field(default_factory=list)
+    trusted_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # Database
     database_url: str = Field(
         default=f"sqlite:///{(_DATA_DIR / 'app.db').as_posix()}", min_length=1
     )
+    repositories_dir: Path = _DATA_DIR / "repos"
 
     # Ollama
     ollama_base_url: str = Field(
@@ -51,7 +59,8 @@ class Settings(BaseSettings):
     ollama_model: str = Field(default="llama3.2:1b", min_length=1)
     ollama_timeout_seconds: Annotated[float, Field(gt=0)] = 120.0
     ollama_temperature: Annotated[float, Field(ge=0, le=2)] = 0.0
-    ollama_max_tokens: Annotated[int, Field(gt=0)] = 2_048
+    ollama_max_tokens: Annotated[int, Field(gt=0)] = 256
+    ollama_num_ctx: Annotated[int, Field(gt=0)] = 2048
 
     # Embeddings
     embedding_provider: str = Field(default="sentence_transformers", min_length=1)
@@ -70,9 +79,15 @@ class Settings(BaseSettings):
     )
     chroma_collection_prefix: str = Field(default="codeatlas_repo", min_length=1)
 
+    # Tree-sitter
+    # Optional override for a project-local compiled grammar library. When
+    # absent or unavailable, the parser uses the portable grammars bundled
+    # by the tree-sitter-languages package.
+    tree_sitter_languages_dir: Path = _DATA_DIR / "tree_sitter_languages"
+
     # Shared service limits
     retrieval_top_k: Annotated[int, Field(gt=0, le=200)] = 5
-    retrieval_token_budget: Annotated[int, Field(gt=0)] = 4_000
+    retrieval_token_budget: Annotated[int, Field(gt=0)] = 1200
     graph_max_traversal_depth: Annotated[int, Field(gt=0, le=100)] = 10
 
     @field_validator("environment", "embedding_provider", mode="before")
@@ -82,6 +97,18 @@ class Settings(BaseSettings):
         if not normalized:
             raise ValueError("value must not be empty")
         return normalized
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def normalize_debug_value(cls, value: object) -> object:
+        """Accept common deployment labels in addition to boolean values."""
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "production", "prod", "false", "no", "off", "0"}:
+                return False
+            if normalized in {"development", "dev", "debug", "true", "yes", "on", "1"}:
+                return True
+        return value
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -121,12 +148,31 @@ class Settings(BaseSettings):
         url = str(value).strip()
         if "://" not in url:
             raise ValueError("database_url must be a valid SQLAlchemy URL")
+        if url.startswith("sqlite:///") and not url.startswith("sqlite:////"):
+            sqlite_path = Path(url.removeprefix("sqlite:///"))
+            if sqlite_path.as_posix() != ":memory:" and not sqlite_path.is_absolute():
+                url = f"sqlite:///{(_PROJECT_ROOT / sqlite_path).resolve().as_posix()}"
         return url
 
-    @field_validator("log_file", "chroma_persist_directory", mode="before")
+    @field_validator(
+        "log_file",
+        "repositories_dir",
+        "chroma_persist_directory",
+        "tree_sitter_languages_dir",
+        mode="before",
+    )
     @classmethod
     def resolve_path(cls, value: str | Path) -> Path:
-        return Path(value).expanduser().resolve()
+        path = Path(value).expanduser()
+        return (path if path.is_absolute() else _PROJECT_ROOT / path).resolve()
+
+    @model_validator(mode="after")
+    def validate_cors_configuration(self) -> "Settings":
+        if self.cors_allow_credentials and "*" in self.cors_allowed_origins:
+            raise ValueError(
+                "cors_allowed_origins cannot contain '*' when credentials are enabled"
+            )
+        return self
 
     # Compatibility properties for existing modules using the old names.
     @property
@@ -139,11 +185,11 @@ class Settings(BaseSettings):
 
     @property
     def TREE_SITTER_LANGUAGES_DIR(self) -> Path:
-        return _DATA_DIR / "tree_sitter_languages"
+        return self.tree_sitter_languages_dir
 
     @property
     def REPOSITORIES_DIR(self) -> Path:
-        return _DATA_DIR / "repos"
+        return self.repositories_dir
 
     @property
     def DATABASE_URL(self) -> str:

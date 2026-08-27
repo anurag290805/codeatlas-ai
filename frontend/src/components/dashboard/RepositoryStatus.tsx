@@ -19,7 +19,10 @@ export type RepositoryStatusValue =
   | "indexing"
   | "embedding"
   | "ready"
-  | "error";
+  | "error"
+  | "index_failed"
+  | "failed_import"
+  | "deleting";
 
 interface RepositoryStatusProps {
   status: RepositoryStatusValue;
@@ -34,6 +37,26 @@ const STATUS_CONFIG: Record<
     label: "Idle",
     icon: CircleDot,
     className: "border-transparent bg-muted text-muted-foreground",
+  },
+  index_failed: {
+    label: "Index Failed",
+    icon: AlertCircle,
+    className:
+      "border-transparent bg-red-500/10 text-red-600 dark:text-red-400",
+  },
+
+  failed_import: {
+    label: "Import Failed",
+    icon: AlertCircle,
+    className:
+      "border-transparent bg-red-500/10 text-red-600 dark:text-red-400",
+  },
+
+  deleting: {
+    label: "Deleting",
+    icon: AlertCircle,
+    className:
+      "border-transparent bg-orange-500/10 text-orange-600 dark:text-orange-400",
   },
   importing: {
     label: "Importing",
@@ -72,12 +95,20 @@ const STATUS_CONFIG: Record<
  * badge with an icon. Reusable anywhere repository status needs to be
  * surfaced (cards, tables, detail panes).
  *
- * `RepositoryStatusValue` is defined here as a temporary placeholder
+ * `RepositoryStatusValue` is defined here as the presentation status union
  * and should move to `src/types` once shared domain types exist.
  */
 export function RepositoryStatus({ status, className }: RepositoryStatusProps) {
-  const { label, icon: Icon, className: statusClassName } = STATUS_CONFIG[status];
+  const config =
+    STATUS_CONFIG[status] ??
+    {
+      label: status,
+      icon: AlertCircle,
+      className:
+        "border-transparent bg-gray-500/10 text-gray-600 dark:text-gray-400",
+    };
 
+  const { label, icon: Icon, className: statusClassName } = config;
   return (
     <Badge className={cn("gap-1.5 font-medium", statusClassName, className)}>
       <Icon className="h-3 w-3" aria-hidden="true" />

@@ -1,17 +1,23 @@
 // src/api/health.ts
 import type { AxiosResponse } from "axios";
-import { apiClient } from "@/api/client";
+import { apiClient, systemClient } from "@/api/client";
+import type {
+  BackendHealthResponse,
+  QueryHealthResponse,
+  VersionResponse,
+} from "@/types/health";
 
 /**
- * Thin service layer over the `/health` backend endpoint.
- *
- * The response generic defaults to `unknown` as a temporary
- * placeholder until a shared health-status type is added under
- * `src/types`. Supplying an explicit generic at the call site does not
- * change this service's public API.
+ * System and query probes use separate clients because system routes live outside `/api`.
  */
 export const HealthApi = {
-  getHealth<TResponse = unknown>(): Promise<AxiosResponse<TResponse>> {
-    return apiClient.get<TResponse>("/health");
+  getLiveness(): Promise<AxiosResponse<BackendHealthResponse>> {
+    return systemClient.get<BackendHealthResponse>("/health");
+  },
+  getQueryHealth(): Promise<AxiosResponse<QueryHealthResponse>> {
+    return apiClient.get<QueryHealthResponse>("/query/health");
+  },
+  getVersion(): Promise<AxiosResponse<VersionResponse>> {
+    return systemClient.get<VersionResponse>("/version");
   },
 };

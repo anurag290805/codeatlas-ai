@@ -17,17 +17,20 @@ contract exposed to clients.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Optional
+from pathlib import Path
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.embeddings import EmbeddingGenerationError, EmbeddingService
 from app.core.git_handler import GitRepositoryManager, RepositoryOperationError
+from app.core.graph_builder import get_graph_service
 from app.core.parser import RepositoryParseError, RepositoryParser
 from app.core.vector_store import VectorStoreError, VectorStoreService
 from app.db import crud
 from app.db.database import get_db
+from app.models.db_models import Repository
 from app.models import schemas
 from app.utils.logger import get_logger
 
@@ -96,67 +99,126 @@ def _run_indexing_pipeline(
     embed, store vectors, and persist metadata. Repository status is
     updated at each stage so clients can poll progress.
 
-    This function swallows all pipeline exceptions after recording a
-    FAILED status with a descriptive message -- it is executed as a
-    background task and has no HTTP response to return errors through.
+    This function records failures because it is executed as a background
+    task, but preserves the original exception in logs and removes partial
+    index state so a failed repository remains safely retryable.
     """
+    staged_collection: str | None = None
+    staged_clone: Path | None = None
     try:
+        repository_numeric_id = int(repository_id)
         crud.update_repository_status(
-            db, repository_id=repository_id, status=schemas.RepositoryStatus.CLONING
+            db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
         )
+        identity = git_manager.validate_repository_url(clone_url)
         if is_update:
+            logger.info("Indexing stage started repository_id=%s stage=update", repository_id)
             metadata = git_manager.update_repository(clone_url)
+            local_path = Path(metadata.local_path)
         else:
-            metadata = git_manager.clone_repository(clone_url)
-        local_path = metadata.local_path
+            live_path = git_manager.resolve_local_path(identity)
+            staged_clone = live_path.parent / f".{live_path.name}.indexing-{uuid.uuid4().hex}"
+            logger.info("Indexing stage started repository_id=%s stage=clone", repository_id)
+            metadata = git_manager.clone_repository(clone_url, target_path=staged_clone)
+            local_path = Path(metadata.local_path)
+        logger.info("Indexing stage finished repository_id=%s stage=clone", repository_id)
 
-        crud.update_repository_status(
-            db, repository_id=repository_id, status=schemas.RepositoryStatus.PARSING
-        )
-        parse_result = parser.parse_repository(int(repository_id), local_path)
+        logger.info("Indexing stage started repository_id=%s stage=parse", repository_id)
+        logger.info("Indexing stage started repository_id=%s stage=parsing", repository_id)
+        parse_result = parser.parse_repository(repository_numeric_id, local_path)
 
-        crud.update_repository_status(
-            db, repository_id=repository_id, status=schemas.RepositoryStatus.EMBEDDING
-        )
+        logger.info("Indexing stage started repository_id=%s stage=graph", repository_id)
+        graph_service = get_graph_service()
+        graph = graph_service.build_staged_graph(parse_result)
+
+        logger.info("Indexing stage started repository_id=%s stage=embedding", repository_id)
         chunks = parse_result.chunks
-        embeddings = embedding_service.generate_embeddings(chunks)
-
-        vector_store_service.upsert_embeddings(
-            repository_id=repository_id, chunks=chunks, embeddings=embeddings
+        embeddings = embedding_service.generate_embeddings(chunks, repository_id=repository_id)
+        embedding_items = list(getattr(embeddings, "embeddings", embeddings) or [])
+        logger.info(
+            "Embedding generation completed repository_id=%s chunks=%d embeddings=%d",
+            repository_id,
+            len(chunks),
+            len(embedding_items),
         )
 
-        crud.replace_indexed_files(
-            db, repository_id=repository_id, parsed_files=parse_result.files
+        logger.info("Indexing stage started repository_id=%s stage=metadata", repository_id)
+        staged_collection = vector_store_service.stage_embeddings(
+            repository_id, list(getattr(embeddings, "embeddings", embeddings) or [])
         )
+
+        logger.info("Indexing stage started repository_id=%s stage=commit", repository_id)
+        vector_store_service.publish_staged_collection(repository_id, staged_collection)
+        graph_service.publish_graph(graph)
+        promoted_path = (
+            local_path
+            if is_update
+            else git_manager.promote_repository_clone(identity, local_path)
+        )
+        crud.update_repository(
+            db, repository_numeric_id, local_path=str(promoted_path),
+            default_branch=metadata.default_branch or "main",
+            current_commit_hash=metadata.current_commit_hash or None,
+        )
+        crud.replace_indexed_files(db, repository_id=repository_id, parsed_files=parse_result.files)
         crud.update_repository_status(
-            db,
-            repository_id=repository_id,
-            status=schemas.RepositoryStatus.INDEXED,
-            indexed_file_count=len(parse_result.files),
-            indexed_chunk_count=len(chunks),
+            db, repository_id=repository_id, status=schemas.RepositoryStatus.READY,
+            total_files=len(parse_result.files), total_chunks=len(chunks),
+            total_embeddings=len(embedding_items),
         )
-
-        logger.info("Indexing completed repository_id=%s chunks=%d", repository_id, len(chunks))
+        graph_stats = graph.statistics()
+        logger.info(
+            "Repository indexing committed repository_id=%s files=%d chunks=%d embeddings=%d nodes=%d edges=%d",
+            repository_id, len(parse_result.files), len(chunks), len(embedding_items),
+            graph_stats.total_nodes,
+            graph_stats.total_edges,
+        )
 
     except RepositoryOperationError as exc:
-        _mark_indexing_failed(db, repository_id, "git", exc)
+        _mark_indexing_failed(db, repository_id, "git", exc, vector_store_service, staged_collection, staged_clone)
     except RepositoryParseError as exc:
-        _mark_indexing_failed(db, repository_id, "parser", exc)
+        _mark_indexing_failed(db, repository_id, "parser", exc, vector_store_service, staged_collection, staged_clone)
     except EmbeddingGenerationError as exc:
-        _mark_indexing_failed(db, repository_id, "embedding", exc)
+        _mark_indexing_failed(db, repository_id, "embedding", exc, vector_store_service, staged_collection, staged_clone)
     except VectorStoreError as exc:
-        _mark_indexing_failed(db, repository_id, "vector_store", exc)
+        _mark_indexing_failed(db, repository_id, "vector_store", exc, vector_store_service, staged_collection, staged_clone)
     except Exception as exc:  # noqa: BLE001 - final safety net for a background task
-        _mark_indexing_failed(db, repository_id, "unknown", exc)
+        _mark_indexing_failed(db, repository_id, "unknown", exc, vector_store_service, staged_collection, staged_clone)
 
 
-def _mark_indexing_failed(db: Session, repository_id: str, stage: str, exc: Exception) -> None:
-    """Persist a FAILED status for a repository and log the originating stage."""
-    logger.error("Indexing failed repository_id=%s stage=%s error=%s", repository_id, stage, exc)
+def _mark_indexing_failed(
+    db: Session,
+    repository_id: str,
+    stage: str,
+    exc: Exception,
+    vector_store_service: VectorStoreService | None = None,
+    staged_collection: str | None = None,
+    staged_clone: Path | None = None,
+) -> None:
+    """Record failure and remove only artifacts from this indexing attempt."""
+    logger.exception("Indexing failed repository_id=%s stage=%s error=%s", repository_id, stage, exc)
+    if vector_store_service is not None and staged_collection:
+        try:
+            vector_store_service.discard_staged_collection(staged_collection)
+        except Exception as cleanup_exc:  # noqa: BLE001
+            logger.exception(
+                "Indexing rollback failed repository_id=%s stage=vector_store_cleanup error=%s",
+                repository_id,
+                cleanup_exc,
+            )
+    if staged_clone is not None:
+        try:
+            import shutil
+            shutil.rmtree(staged_clone, ignore_errors=True)
+        except Exception:
+            logger.exception("Indexing rollback failed repository_id=%s stage=clone_cleanup", repository_id)
+    previous = crud.get_repository(db, repository_id)
+    had_usable_index = bool(previous and (previous.total_embeddings or previous.total_chunks or previous.total_files))
+    failure_status = schemas.RepositoryStatus.INDEX_FAILED if had_usable_index else schemas.RepositoryStatus.FAILED_IMPORT
     crud.update_repository_status(
         db,
         repository_id=repository_id,
-        status=schemas.RepositoryStatus.FAILED,
+        status=failure_status,
         error_message=f"Indexing failed at stage '{stage}': {exc}",
     )
 
@@ -187,20 +249,48 @@ def import_repository(
     vector_store_service: VectorStoreService = Depends(get_vector_store_service),
 ) -> schemas.RepositoryResponse:
     """Register a repository for indexing and schedule the indexing pipeline."""
-    existing = crud.get_repository_by_url(db, repository_url=str(payload.url))
+    identity = git_manager.validate_repository_url(str(payload.url))
+    canonical_url = identity.canonical_url
+    existing = crud.get_repository_by_url(db, repository_url=canonical_url)
+    if existing is None and str(payload.url) != canonical_url:
+        # Accept legacy rows created before URL canonicalization was added.
+        existing = crud.get_repository_by_url(db, repository_url=str(payload.url))
     if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Repository already registered: {payload.url}",
+        retryable_statuses = {
+            schemas.RepositoryStatus.FAILED.value,
+            schemas.RepositoryStatus.INDEX_FAILED.value,
+            schemas.RepositoryStatus.FAILED_IMPORT.value,
+        }
+        if existing.status not in retryable_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Repository already registered: {canonical_url}",
+            )
+        repository = crud.update_repository_status(
+            db,
+            repository_id=existing.id,
+            status=schemas.RepositoryStatus.PENDING,
+            total_files=existing.files_indexed,
+            total_chunks=existing.chunks_generated,
+            total_embeddings=existing.embeddings_generated,
+        )
+        if repository is None:
+            raise HTTPException(status_code=404, detail=f"Repository not found: {existing.id}")
+        logger.info("Retrying failed repository import repository_id=%s url=%s", repository.id, canonical_url)
+    else:
+        repository = crud.create_repository(
+            db,
+            repository_name=identity.full_name,
+            repository_url=canonical_url,
+            default_branch=payload.branch or "main",
         )
 
-    repository = crud.create_repository(db, obj_in=payload)
-    logger.info("Repository imported repository_id=%s url=%s", repository.id, payload.url)
+    logger.info("Repository import scheduled repository_id=%s url=%s", repository.id, canonical_url)
 
     background_tasks.add_task(
         _run_indexing_pipeline,
         repository_id=repository.id,
-        clone_url=str(payload.url),
+        clone_url=canonical_url,
         is_update=False,
         db=db,
         git_manager=git_manager,
@@ -286,7 +376,7 @@ def reindex_repository(
     """Schedule a full re-index of an already registered repository."""
     repository = _get_repository_or_404(db, repository_id)
     crud.update_repository_status(
-        db, repository_id=repository_id, status=schemas.RepositoryStatus.PENDING
+        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
     )
     logger.info("Repository reindex requested repository_id=%s", repository_id)
 
@@ -327,7 +417,7 @@ def update_repository(
     """Schedule a git pull followed by a full re-index of the repository."""
     repository = _get_repository_or_404(db, repository_id)
     crud.update_repository_status(
-        db, repository_id=repository_id, status=schemas.RepositoryStatus.PENDING
+        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
     )
     logger.info("Repository update requested repository_id=%s", repository_id)
 
@@ -364,24 +454,25 @@ def delete_repository(
 ) -> None:
     """Delete a repository and all associated indexed data."""
     repository = _get_repository_or_404(db, repository_id)
+    repository_numeric_id = int(repository.id)
+    crud.update_repository_status(db, repository_id=repository_numeric_id, status=schemas.RepositoryStatus.DELETING)
+
+    try:
+        identity = git_manager.validate_repository_url(repository.url)
+        git_manager.delete_repository(identity)
+    except RepositoryOperationError as exc:
+        logger.exception("Local clone cleanup failed repository_id=%s", repository_id)
+        raise HTTPException(status_code=502, detail="Failed to remove repository clone. Please retry.") from exc
 
     try:
         vector_store_service.delete_repository_embeddings(repository_id)
     except VectorStoreError as exc:
-        logger.error("Vector store deletion failed repository_id=%s error=%s", repository_id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to remove repository vectors. Please retry.",
-        ) from exc
+        logger.exception("Vector store deletion failed repository_id=%s", repository_id)
+        raise HTTPException(status_code=502, detail="Failed to remove repository vectors. Please retry.") from exc
 
-    try:
-        git_manager.remove_local_clone(repository.url)
-    except RepositoryOperationError as exc:
-        logger.warning(
-            "Local clone cleanup failed repository_id=%s error=%s", repository_id, exc
-        )
+    get_graph_service().delete_persisted_graph(repository_id)
 
-    crud.delete_repository(db, repository_id=repository_id)
+    crud.delete_repository(db, repository_id=repository_numeric_id)
     logger.info("Repository deleted repository_id=%s", repository_id)
 
 
@@ -397,18 +488,182 @@ def repository_health_check(
     """Return aggregate repository counts grouped by indexing status."""
     return schemas.RepositoryHealthResponse(
         total_repositories=crud.count_repositories(db),
-        indexed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.INDEXED),
-        failed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.FAILED),
-        pending=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.PENDING),
+        indexed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.READY.value),
+        failed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.INDEX_FAILED.value),
+        pending=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.INDEXING.value),
     )
 
+@router.get(
+    "/{repository_id}/files",
+    response_model=schemas.RepositoryFilesResponse,
+    summary="List repository files",
+)
+def list_repository_files(
+    repository_id: int,
+    db: Session = Depends(get_db),
+) -> schemas.RepositoryFilesResponse:
+    """
+    Return all indexed files belonging to a repository.
+    """
+    repository = crud.get_repository(db, repository_id=repository_id)
+
+    if repository is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository not found: {repository_id}",
+        )
+
+    files = crud.list_repository_files(db, repository_id)
+
+    return schemas.RepositoryFilesResponse(
+        files=[
+            schemas.RepositoryFileResponse(
+                id=file.id,
+                relative_path=file.relative_path,
+                language=_language_value(file.programming_language),
+                file_size_bytes=file.file_size,
+                checksum_sha256=file.checksum,
+                chunks_generated=file.chunk_count,
+            )
+            for file in files
+        ]
+    )
+
+
+@router.get(
+    "/{repository_id}/files/content",
+    response_model=schemas.RepositoryFileContentResponse,
+    summary="Get file content",
+    description="Returns the content of a specific file in the repository.",
+)
+def get_repository_file_content(
+    repository_id: int,
+    path: str = Query(..., description="Relative path to the file within the repository."),
+    db: Session = Depends(get_db),
+    git_manager: GitRepositoryManager = Depends(get_git_repository_manager),
+) -> schemas.RepositoryFileContentResponse:
+    """
+    Return the content of a specific file from a cloned repository.
+    """
+    repository = crud.get_repository(db, repository_id=repository_id)
+    if repository is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository not found: {repository_id}",
+        )
+
+    if not repository.local_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository has not been cloned yet.",
+        )
+
+    from pathlib import Path
+    local_path = Path(repository.local_path)
+    file_path = local_path / path
+
+    # Security: ensure the path doesn't escape the repository root
+    try:
+        file_path = file_path.resolve()
+        if not str(file_path).startswith(str(local_path.resolve())):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: path outside repository root.",
+            )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file path: {path}",
+        ) from exc
+
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File not found: {path}",
+        )
+
+    if not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Path is not a file: {path}",
+        )
+
+    # Check if file is binary
+    try:
+        with open(file_path, "rb") as f:
+            content_bytes = f.read()
+            # Try to decode as UTF-8, if it fails it's likely binary
+            try:
+                content = content_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=f"Cannot preview binary file: {path}",
+                )
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read file: {exc}",
+        ) from exc
+
+    # Detect language from extension
+    extension_to_language: dict[str, str] = {
+        ".py": "python",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".js": "javascript",
+        ".jsx": "javascript",
+        ".java": "java",
+        ".go": "go",
+        ".rs": "rust",
+        ".rb": "ruby",
+        ".php": "php",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".cs": "csharp",
+        ".swift": "swift",
+        ".kt": "kotlin",
+        ".scala": "scala",
+        ".r": "r",
+        ".sql": "sql",
+        ".sh": "bash",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".json": "json",
+        ".xml": "xml",
+        ".html": "html",
+        ".css": "css",
+        ".scss": "scss",
+        ".less": "less",
+        ".md": "markdown",
+        ".vue": "vue",
+        ".svelte": "svelte",
+    }
+    extension = file_path.suffix.lower()
+    language = extension_to_language.get(extension, "plaintext")
+
+    return schemas.RepositoryFileContentResponse(
+        path=path,
+        content=content,
+        language=language,
+        size_bytes=len(content_bytes),
+    )
 
 # =========================================================================
 # Helpers
 # =========================================================================
 
 
-def _get_repository_or_404(db: Session, repository_id: str) -> schemas.RepositoryResponse:
+def _language_value(language: object) -> str:
+    """Normalize enum instances and legacy enum-repr database values."""
+    value = getattr(language, "value", language)
+    text = str(value)
+    return text.rsplit(".", 1)[-1].lower()
+
+
+def _get_repository_or_404(db: Session, repository_id: str) -> Repository:
     """Fetch a repository by identifier or raise a 404 HTTPException."""
     repository = crud.get_repository(db, repository_id=repository_id)
     if repository is None:

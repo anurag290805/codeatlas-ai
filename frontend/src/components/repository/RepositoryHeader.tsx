@@ -32,7 +32,7 @@ import type { Repository, RepositoryProcessingStatus } from "@/types";
 interface RepositoryHeaderProps {
   repository: Repository;
   onRefresh: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   isRefreshing?: boolean;
   isDeleting?: boolean;
   className?: string;
@@ -92,8 +92,10 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
 }
 
-function formatRelativeTime(isoDate: string): string {
+function formatRelativeTime(isoDate?: string): string {
+  if (!isoDate) return "Not indexed";
   const target = new Date(isoDate).getTime();
+  if (Number.isNaN(target)) return "Not indexed";
   const diffSeconds = Math.round((target - Date.now()) / 1000);
   const divisions: [Intl.RelativeTimeFormatUnit, number][] = [
     ["year", 60 * 60 * 24 * 365],
@@ -145,6 +147,12 @@ export function RepositoryHeader({
               </span>
             </div>
 
+            {repository.description && (
+              <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                {repository.description}
+              </p>
+            )}
+
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge
                 variant="outline"
@@ -177,7 +185,7 @@ export function RepositoryHeader({
 
             <p className="flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="h-3 w-3" />
-              Updated {formatRelativeTime(repository.updatedAt)}
+              Last indexed {formatRelativeTime(repository.lastIndexedAt ?? repository.updatedAt)}
             </p>
           </div>
 
@@ -223,18 +231,20 @@ export function RepositoryHeader({
                     Open on GitHub
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  disabled={isDeleting}
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    setMenuOpen(false);
-                    onDelete();
-                  }}
-                  className="flex cursor-pointer items-center gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Repository
-                </DropdownMenuItem>
+                {onDelete && (
+                  <DropdownMenuItem
+                    disabled={isDeleting}
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setMenuOpen(false);
+                      onDelete();
+                    }}
+                    className="flex cursor-pointer items-center gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Repository
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
