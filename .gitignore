@@ -82,7 +82,7 @@ indexes/
 .cache/
 cache/
 model_cache/
-models/
+/models/
 checkpoints/
 sentence_transformers_data/
 transformers_cache/
