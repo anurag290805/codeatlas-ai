@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, Loader2, Server } from "lucide-react";
-import { useHealth, useQueryHealth } from "@/hooks/useHealth";
+import { useQueryHealth } from "@/hooks/useHealth";
 import { cn } from "@/lib/utils";
 
 interface HealthStatusProps {
@@ -21,22 +21,30 @@ function Signal({ label, value, detail, state }: { label: string; value: string;
 }
 
 export function HealthStatus({ className }: HealthStatusProps) {
-  const liveness = useHealth();
   const query = useQueryHealth();
-  const backendState = liveness.isLoading ? "unavailable" : liveness.isError ? "unavailable" : "healthy";
+  // The query health endpoint is the authoritative public platform probe. It
+  // checks the same backend path used by the production dashboard and avoids
+  // treating the root route's unsupported HEAD response as an outage.
+  const backendState = query.isLoading
+    ? "unavailable"
+    : query.isError
+      ? "unavailable"
+      : query.data?.status === "healthy"
+        ? "healthy"
+        : "degraded";
   const queryState = query.isLoading ? "unavailable" : query.isError ? "unavailable" : query.data?.status === "healthy" ? "healthy" : "degraded";
   const queryMessage = query.isError ? "AI readiness could not be checked." : query.data?.message;
 
   return <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className={cn("rounded-xl border bg-card p-5 text-card-foreground shadow-sm sm:p-6", className)} aria-label="Platform health">
     <div className="flex flex-col gap-5">
-      <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Server className="h-5 w-5" /></div><div><h2 className="text-sm font-semibold">Platform health</h2><p className="text-xs text-muted-foreground">Backend liveness and AI readiness</p></div></div><StatusPill state={backendState} label={backendState === "healthy" ? "Backend online" : "Backend unavailable"} /></div>
+      <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Server className="h-5 w-5" /></div><div><h2 className="text-sm font-semibold">Platform health</h2><p className="text-xs text-muted-foreground">Backend health and AI readiness</p></div></div><StatusPill state={backendState} label={backendState === "healthy" ? "Backend available" : backendState === "degraded" ? "Backend degraded" : "Backend unavailable"} /></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Signal label="Backend" value={backendState === "healthy" ? "Online" : "Unavailable"} state={backendState} />
+        <Signal label="Backend" value={backendState === "healthy" ? "Available" : backendState === "degraded" ? "Degraded" : "Unavailable"} state={backendState} />
         <Signal label="AI query" value={queryState === "healthy" ? "Ready" : queryState === "degraded" ? "Degraded" : "Unavailable"} detail={queryMessage} state={queryState} />
         <Signal label="Ollama" value={query.data?.ollama_reachable ? "Reachable" : "Unavailable"} state={query.data?.ollama_reachable ? "healthy" : "unavailable"} />
         <Signal label="Model" value={query.data?.llm_model ?? "Checking…"} detail={query.data?.model_available ? "Available" : "Not verified"} state={query.data?.model_available ? "healthy" : "degraded"} />
       </div>
-      {query.isLoading || liveness.isLoading ? <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing platform signals…</div> : queryState === "healthy" ? <p className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" />{query.data?.llm_provider} is ready for grounded answers.</p> : <p className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400"><AlertCircle className="h-3.5 w-3.5" />{queryMessage ?? "AI answers may be unavailable until the provider is ready."}</p>}
+      {query.isLoading ? <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing platform signals…</div> : queryState === "healthy" ? <p className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" />{query.data?.llm_provider} is ready for grounded answers.</p> : <p className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400"><AlertCircle className="h-3.5 w-3.5" />{queryMessage ?? "AI answers may be unavailable until the provider is ready."}</p>}
     </div>
   </motion.section>;
 }
