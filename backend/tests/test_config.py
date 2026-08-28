@@ -42,6 +42,22 @@ def test_debug_accepts_deployment_labels(monkeypatch) -> None:
     assert Settings(_env_file=None, debug="debug").debug is True
 
 
+def test_render_postgres_url_is_normalized() -> None:
+    settings = Settings(
+        _env_file=None,
+        database_url="postgres://user:secret@example.internal:5432/codeatlas",
+    )
+    assert settings.DATABASE_URL == (
+        "postgresql://user:secret@example.internal:5432/codeatlas"
+    )
+
+
+def test_sqlite_database_url_remains_local_development_default() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.DATABASE_URL.startswith("sqlite:///")
+    assert settings.DATABASE_URL.endswith("/data/app.db")
+
+
 def test_configured_cors_origin_allows_request_and_preflight(monkeypatch) -> None:
     settings = SimpleNamespace(
         cors_allowed_origins=["http://localhost:4173"],

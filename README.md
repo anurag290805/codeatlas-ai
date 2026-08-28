@@ -106,7 +106,10 @@ codeatlas-ai/
 └── README.md
 ```
 
-SQLite handles application metadata; ChromaDB handles searchable vectors — each store is used for what it's actually good at, rather than forcing one database to do both jobs.
+SQLite handles application metadata locally, while production can use Render
+PostgreSQL via `DATABASE_URL`; ChromaDB handles searchable vectors — each
+store is used for what it's actually good at, rather than forcing one database
+to do both jobs.
 
 ---
 
@@ -121,7 +124,7 @@ SQLite handles application metadata; ChromaDB handles searchable vectors — eac
 | **Embeddings** | Sentence Transformers (`BAAI/bge-small-en-v1.5`, local) |
 | **Vector Store** | ChromaDB |
 | **LLM Inference** | Ollama (`llama3.2:1b`, local, swappable) |
-| **Metadata Store** | SQLite |
+| **Metadata Store** | SQLite locally / PostgreSQL on Render |
 | **Frontend** | React 19 + TypeScript + Vite |
 | **Frontend Data/State** | TanStack Query |
 | **Frontend Routing** | React Router |
@@ -182,7 +185,7 @@ cp backend/.env.example backend/.env
 |---|---|---|
 | `APP_NAME` | `CodeAtlas AI` | Application name |
 | `DEBUG` | `True` | Development diagnostics — set `False` in production |
-| `DATABASE_URL` | `sqlite:///./codeatlas.db` | SQLAlchemy database URL |
+| `DATABASE_URL` | `sqlite:///./codeatlas.db` locally | SQLAlchemy database URL. Set this to the Render PostgreSQL connection string in production; `postgres://` is normalized automatically to `postgresql://`. |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2:1b` | Generation model |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Local embedding model |
@@ -192,6 +195,14 @@ cp backend/.env.example backend/.env
 Config resolution order: repository-root `.env` → `backend/.env` (wins on conflict) → shell environment variables (highest priority). Relative paths resolve from the repository root. `CHROMA_DB_PATH`/`CHROMA_PERSIST_DIRECTORY` and `OLLAMA_HOST`/`OLLAMA_BASE_URL` are aliases.
 
 > 🔒 Never commit `.env` files, credentials, databases, vector stores, or model caches.
+
+For Render, create/attach a Render PostgreSQL database and configure its
+internal connection string as the backend service's `DATABASE_URL` environment
+variable. The backend selects PostgreSQL whenever that variable is set to a
+PostgreSQL URL; otherwise it uses the local SQLite file. Startup only creates
+missing tables and checks connectivity—it does not reset or overwrite existing
+production data. Repository records and indexing metadata therefore remain in
+PostgreSQL across deploys and restarts.
 
 ---
 

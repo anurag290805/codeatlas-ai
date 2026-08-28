@@ -8,10 +8,9 @@ modules — most notably `app/models/db_models.py` and FastAPI route
 handlers — can depend on a consistently configured `Base`, `engine`, and
 `SessionLocal`.
 
-The engine is configured for SQLite by default but built using standard
-SQLAlchemy 2.x APIs so that migrating to PostgreSQL later requires only a
-change to the `DATABASE_URL` setting and the removal of the
-SQLite-specific `connect_args`.
+SQLite remains the default for local development. When `DATABASE_URL` is
+set to a PostgreSQL URL (as it should be on Render), SQLAlchemy uses the
+managed PostgreSQL database instead of the ephemeral application disk.
 """
 
 from collections.abc import Generator
@@ -26,10 +25,7 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# SQLite-specific connection arguments. These are only meaningful when the
-# configured DATABASE_URL targets SQLite; they are harmless to construct
-# unconditionally but should be dropped if/when the engine is pointed at
-# a different database backend (e.g. PostgreSQL).
+# SQLite-specific connection arguments. Never pass these to PostgreSQL.
 _SQLITE_CONNECT_ARGS = {"check_same_thread": False}
 
 
@@ -37,9 +33,9 @@ def _create_database_engine() -> Engine:
     """Build and return the SQLAlchemy engine for the application.
 
     Reads the database connection string from the application settings
-    and configures engine options appropriate for SQLite. The engine is
-    created once at module load time and reused for the lifetime of the
-    process.
+    and configures engine options appropriate for the selected backend. The
+    engine is created once at module load time and reused for the lifetime
+    of the process.
 
     Returns:
         A configured SQLAlchemy `Engine` instance.
@@ -54,14 +50,20 @@ def _create_database_engine() -> Engine:
         logger.error("DATABASE_URL is not configured; cannot create engine.")
         raise ValueError("DATABASE_URL must be set in the application configuration.")
 
-    connect_args = _SQLITE_CONNECT_ARGS if database_url.startswith("sqlite") else {}
+    is_sqlite = database_url.startswith("sqlite")
+    engine_options: dict[str, object] = {
+        "future": True,
+        # Render/PostgreSQL connections can be closed while idle. Checking
+        # a connection before borrowing it avoids handing a stale connection
+        # to a request after a restart or database maintenance event.
+        "pool_pre_ping": not is_sqlite,
+    }
+    if is_sqlite:
+        engine_options["connect_args"] = _SQLITE_CONNECT_ARGS
 
-    logger.info("Creating SQLAlchemy engine for database at: %s", database_url)
-    return create_engine(
-        database_url,
-        connect_args=connect_args,
-        future=True,
-    )
+    backend = "SQLite" if is_sqlite else "PostgreSQL"
+    logger.info("Creating SQLAlchemy engine backend=%s", backend)
+    return create_engine(database_url, **engine_options)
 
 
 # Module-level engine and session factory, shared across the application.
@@ -129,12 +131,13 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def initialize_database() -> None:
-    """Create database tables and verify connectivity.
+    """Create missing database tables and verify connectivity.
 
-    Imports all ORM models indirectly via `Base.metadata` (models must
-    already be defined and registered against `Base` before this is
-    called), creates any tables that do not yet exist, and performs a
-    lightweight connectivity check.
+    Import the ORM module explicitly so every model is registered before
+    creating missing tables. ``create_all`` is intentionally additive: it
+    does not drop, truncate, or overwrite existing tables or rows. Schema
+    changes for an existing production database must be handled by an
+    explicit migration process, never by startup.
 
     This function must be called explicitly during application startup.
     It is never invoked automatically on module import.
@@ -145,7 +148,12 @@ def initialize_database() -> None:
             re-raised.
     """
     try:
-        logger.info("Initializing database schema.")
+        # Keep model registration local to initialization to avoid relying on
+        # router import order when this function is called from a script or
+        # test suite.
+        from app.models import db_models  # noqa: F401
+
+        logger.info("Ensuring database schema exists without modifying existing data.")
         Base.metadata.create_all(bind=engine)
 
         with engine.connect() as connection:

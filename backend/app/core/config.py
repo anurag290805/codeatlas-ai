@@ -149,6 +149,15 @@ class Settings(BaseSettings):
         url = str(value).strip()
         if "://" not in url:
             raise ValueError("database_url must be a valid SQLAlchemy URL")
+
+        # Render commonly exposes its managed PostgreSQL connection string
+        # with the legacy ``postgres://`` scheme. SQLAlchemy expects the
+        # dialect name to be ``postgresql://`` (and the psycopg driver is
+        # installed for that dialect), so normalize it once at the settings
+        # boundary before the engine is constructed.
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url.removeprefix("postgres://")
+
         if url.startswith("sqlite:///") and not url.startswith("sqlite:////"):
             sqlite_path = Path(url.removeprefix("sqlite:///"))
             if sqlite_path.as_posix() != ":memory:" and not sqlite_path.is_absolute():
