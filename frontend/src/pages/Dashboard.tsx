@@ -33,6 +33,9 @@ const STATUS_MAP: Record<RepositoryListItem["status"], RepositoryStatusValue> = 
   failed_import: "error",
   failed: "error",
   deleting: "importing",
+  discovering_files: "indexing",
+  chunking: "indexing",
+  storing: "embedding",
 };
 
 function repositoryName(repository: RepositoryListItem): string {

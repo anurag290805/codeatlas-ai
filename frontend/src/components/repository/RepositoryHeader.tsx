@@ -33,6 +33,7 @@ interface RepositoryHeaderProps {
   repository: Repository;
   onRefresh: () => void;
   onDelete?: () => void;
+  onRetry?: () => void;
   isRefreshing?: boolean;
   isDeleting?: boolean;
   className?: string;
@@ -61,6 +62,24 @@ const STATUS_CONFIG: Record<RepositoryProcessingStatus, StatusConfig> = {
     label: "Parsing",
     icon: Loader2,
     badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
+    spin: true,
+  },
+  discovering_files: {
+    label: "Discovering files",
+    icon: Loader2,
+    badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
+    spin: true,
+  },
+  chunking: {
+    label: "Chunking",
+    icon: Loader2,
+    badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
+    spin: true,
+  },
+  storing: {
+    label: "Storing vectors",
+    icon: Loader2,
+    badgeClassName: "bg-violet-500/10 text-violet-500 border-transparent",
     spin: true,
   },
   embedding: {
@@ -119,6 +138,7 @@ export function RepositoryHeader({
   repository,
   onRefresh,
   onDelete,
+  onRetry,
   isRefreshing = false,
   isDeleting = false,
   className,
@@ -231,6 +251,19 @@ export function RepositoryHeader({
                     Open on GitHub
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                {onRetry && repository.status === "failed" && (
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setMenuOpen(false);
+                      onRetry();
+                    }}
+                    className="flex cursor-pointer items-center gap-2"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Retry indexing
+                  </DropdownMenuItem>
+                )}
                 {onDelete && (
                   <DropdownMenuItem
                     disabled={isDeleting}

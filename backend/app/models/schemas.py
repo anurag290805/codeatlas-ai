@@ -16,6 +16,9 @@ _GITHUB_URL_PATTERN = re.compile(
 class RepositoryStatus(str, Enum):
     READY = "ready"
     INDEXING = "indexing"
+    DISCOVERING_FILES = "discovering_files"
+    CHUNKING = "chunking"
+    STORING = "storing"
     INDEX_FAILED = "index_failed"
     FAILED_IMPORT = "failed_import"
     DELETING = "deleting"
@@ -70,6 +73,8 @@ class RepositoryResponse(BaseModel):
     chunks_generated: int = Field(default=0, ge=0)
     embeddings_generated: int = Field(default=0, ge=0)
     last_indexed_at: datetime | None = None
+    indexing_started_at: datetime | None = None
+    error_message: str | None = None
 
     @field_validator("default_branch", mode="before")
     @classmethod

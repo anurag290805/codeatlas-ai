@@ -44,3 +44,16 @@ export function useDeleteRepository() {
     },
   });
 }
+
+export function useReindexRepository() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (repositoryId: string) => RepositoryApi.reindexRepository(repositoryId),
+    onSuccess: async (_response, repositoryId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["repository", repositoryId] }),
+        queryClient.invalidateQueries({ queryKey: ["repositories"] }),
+      ]);
+    },
+  });
+}

@@ -16,6 +16,7 @@ contract exposed to clients.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 import uuid
@@ -35,6 +36,7 @@ from app.models import schemas
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+_STALE_INDEXING_AFTER = timedelta(hours=2)
 
 router = APIRouter(prefix="/repositories", tags=["repositories"])
 
@@ -111,6 +113,7 @@ def _run_indexing_pipeline(
             db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
         )
         identity = git_manager.validate_repository_url(clone_url)
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.CLONING)
         if is_update:
             logger.info("Indexing stage started repository_id=%s stage=update", repository_id)
             metadata = git_manager.update_repository(clone_url)
@@ -123,14 +126,17 @@ def _run_indexing_pipeline(
             local_path = Path(metadata.local_path)
         logger.info("Indexing stage finished repository_id=%s stage=clone", repository_id)
 
-        logger.info("Indexing stage started repository_id=%s stage=parse", repository_id)
-        logger.info("Indexing stage started repository_id=%s stage=parsing", repository_id)
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.DISCOVERING_FILES)
+        logger.info("Indexing stage started repository_id=%s stage=discovering_files", repository_id)
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.CHUNKING)
+        logger.info("Indexing stage started repository_id=%s stage=chunking", repository_id)
         parse_result = parser.parse_repository(repository_numeric_id, local_path)
 
         logger.info("Indexing stage started repository_id=%s stage=graph", repository_id)
         graph_service = get_graph_service()
         graph = graph_service.build_staged_graph(parse_result)
 
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.EMBEDDING)
         logger.info("Indexing stage started repository_id=%s stage=embedding", repository_id)
         chunks = parse_result.chunks
         embeddings = embedding_service.generate_embeddings(chunks, repository_id=repository_id)
@@ -142,7 +148,8 @@ def _run_indexing_pipeline(
             len(embedding_items),
         )
 
-        logger.info("Indexing stage started repository_id=%s stage=metadata", repository_id)
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.STORING)
+        logger.info("Indexing stage started repository_id=%s stage=storing", repository_id)
         staged_collection = vector_store_service.stage_embeddings(
             repository_id, list(getattr(embeddings, "embeddings", embeddings) or [])
         )
@@ -314,7 +321,7 @@ def list_repositories(
     db: Session = Depends(get_db),
 ) -> schemas.RepositoryListResponse:
     """Return a paginated collection of registered repositories."""
-    repositories = crud.list_repositories(db, skip=skip, limit=limit)
+    repositories = [_recover_stale_indexing(db, repository) for repository in crud.list_repositories(db, skip=skip, limit=limit)]
     total = crud.count_repositories(db)
     return schemas.RepositoryListResponse(
         items=[schemas.RepositoryResponse.model_validate(repo) for repo in repositories],
@@ -335,7 +342,7 @@ def get_repository(
     db: Session = Depends(get_db),
 ) -> schemas.RepositoryResponse:
     """Retrieve a single repository by identifier."""
-    repository = _get_repository_or_404(db, repository_id)
+    repository = _recover_stale_indexing(db, _get_repository_or_404(db, repository_id))
     return schemas.RepositoryResponse.model_validate(repository)
 
 
@@ -350,7 +357,7 @@ def get_repository_status(
     db: Session = Depends(get_db),
 ) -> schemas.RepositoryStatusResponse:
     """Retrieve the current indexing status for a repository."""
-    repository = _get_repository_or_404(db, repository_id)
+    repository = _recover_stale_indexing(db, _get_repository_or_404(db, repository_id))
     return schemas.RepositoryStatusResponse.model_validate(repository)
 
 
@@ -672,3 +679,30 @@ def _get_repository_or_404(db: Session, repository_id: str) -> Repository:
             detail=f"Repository not found: {repository_id}",
         )
     return repository
+
+
+def _recover_stale_indexing(db: Session, repository: Repository) -> Repository:
+    """Make abandoned in-process jobs retryable when they are observed."""
+    active_statuses = {
+        schemas.RepositoryStatus.PENDING.value,
+        schemas.RepositoryStatus.INDEXING.value,
+        schemas.RepositoryStatus.CLONING.value,
+        schemas.RepositoryStatus.DISCOVERING_FILES.value,
+        schemas.RepositoryStatus.CHUNKING.value,
+        schemas.RepositoryStatus.EMBEDDING.value,
+        schemas.RepositoryStatus.STORING.value,
+    }
+    started_at = getattr(repository, "last_index_attempt_at", None)
+    if repository.status not in active_statuses or started_at is None:
+        return repository
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - started_at <= _STALE_INDEXING_AFTER:
+        return repository
+    recovered = crud.update_repository_status(
+        db,
+        repository_id=repository.id,
+        status=schemas.RepositoryStatus.FAILED_IMPORT,
+        error_message="Indexing stopped before completion. Retry indexing to start a new job.",
+    )
+    return recovered or repository

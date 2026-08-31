@@ -115,6 +115,16 @@ class Repository(Base):
     def repository_id(self) -> int:
         return self.id
 
+    @property
+    def error_message(self) -> str | None:
+        """Safe, client-facing indexing failure detail."""
+        return self.last_indexing_error
+
+    @property
+    def indexing_started_at(self) -> datetime | None:
+        """Timestamp of the latest indexing attempt."""
+        return self.last_index_attempt_at
+
 
 class IndexedFile(Base):
     """A single source file parsed and chunked from a `Repository`.

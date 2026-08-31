@@ -9,6 +9,7 @@ import { RepositoryHeader } from "@/components/repository/RepositoryHeader";
 import { RepositoryOverview } from "@/components/repository/RepositoryOverview";
 import { RepositoryStats } from "@/components/repository/RepositoryStats";
 import { useRepository, useRepositoryFile, useRepositoryFileTree } from "@/hooks/useRepository";
+import { useReindexRepository } from "@/hooks/useRepositories";
 import type {
   Repository,
   RepositoryDetailResponse,
@@ -38,6 +39,10 @@ function processingStatus(status: RepositoryDetailResponse["status"]): Repositor
     case "cloning":
     case "parsing":
     case "embedding":
+      return "pending";
+    case "discovering_files":
+    case "chunking":
+    case "storing":
       return "pending";
     case "index_failed":
     case "failed_import":
@@ -95,6 +100,7 @@ export function Repository() {
   const selectedPath = selection.repositoryId === repositoryId ? selection.path : undefined;
   const fileQuery = useRepositoryFile(repositoryId, selectedPath);
   const githubQuery = useGithubIntelligence(repositoryId);
+  const reindexRepository = useReindexRepository();
 
   const repository = useMemo(
     () => (repositoryQuery.data ? toRepository(repositoryQuery.data) : undefined),
@@ -146,7 +152,15 @@ export function Repository() {
         repository={repository}
         onRefresh={() => void repositoryQuery.refetch()}
         isRefreshing={repositoryQuery.isFetching}
+        onRetry={repository.status === "failed" ? () => void reindexRepository.mutateAsync(repositoryId ?? "") : undefined}
       />
+      {repositoryQuery.data?.error_message && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="p-4 text-sm text-destructive">
+            {repositoryQuery.data.error_message}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><GitBranch className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">GitHub stars</p><p className="font-semibold">{githubQuery.data?.available ? githubQuery.data.stars.toLocaleString() : "Unavailable"}</p></div></div></CardContent></Card>

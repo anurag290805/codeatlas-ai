@@ -47,4 +47,8 @@ export const RepositoryApi = {
   deleteRepository<TResponse = unknown>(repositoryId: string): Promise<AxiosResponse<TResponse>> {
     return apiClient.delete<TResponse>(`/repositories/${repositoryId}`);
   },
+
+  reindexRepository(repositoryId: string): Promise<AxiosResponse<RepositoryDetailResponse>> {
+    return apiClient.post<RepositoryDetailResponse>(`/repositories/${repositoryId}/reindex`);
+  },
 };

@@ -17,6 +17,9 @@ export type RepositoryProcessingStatus =
   | "cloning"
   | "parsing"
   | "embedding"
+  | "discovering_files"
+  | "chunking"
+  | "storing"
   | "ready"
   | "failed";
 
@@ -164,6 +167,8 @@ export interface RepositoryDetailResponse extends RepositoryListItem {
   readonly statistics?: RepositoryStatistics;
   readonly metrics?: RepositoryMetrics;
   readonly files?: readonly FileTreeNode[];
+  readonly indexing_started_at?: string | null;
+  readonly error_message?: string | null;
 }
 
 /** Condensed repository projection used in list and card views (e.g. the dashboard). */
@@ -187,7 +192,7 @@ export interface RepositoryListItem {
   readonly repository_name: string;
   readonly url: string;
   readonly default_branch: string;
-  readonly status: "pending" | "cloning" | "parsing" | "embedding" | "ready" | "indexed" | "indexing" | "index_failed" | "failed_import" | "failed" | "deleting";
+  readonly status: "pending" | "cloning" | "parsing" | "embedding" | "discovering_files" | "chunking" | "storing" | "ready" | "indexed" | "indexing" | "index_failed" | "failed_import" | "failed" | "deleting";
   readonly files_indexed: number;
   readonly chunks_generated: number;
   readonly embeddings_generated: number;
