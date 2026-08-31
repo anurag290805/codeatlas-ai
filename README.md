@@ -4,14 +4,13 @@
 
 **Ask questions about any GitHub repo in plain English — get grounded answers with file-and-line citations, not hallucinations.**
 
-*A local-first, retrieval-augmented code intelligence platform. No OpenAI key. No API bill. No data leaving your machine.*
+*A retrieval-augmented code intelligence platform with grounded answers and file-level citations.*
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React_19-Frontend-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F00?style=flat-square)](https://www.trychroma.com/)
-[![Ollama](https://img.shields.io/badge/Ollama-Local_LLM-000000?style=flat-square)](https://ollama.com/)
 [![License](https://img.shields.io/badge/License-See_LICENSE-lightgrey?style=flat-square)](LICENSE)
 
 [Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-local-installation) • [API](#-api-documentation) • [Roadmap](#-roadmap)
@@ -24,7 +23,7 @@
 
 CodeAtlas AI turns a raw GitHub repository into a **queryable knowledge base**. Point it at a repo, and it parses the code into real semantic units — not just text chunks — builds a searchable dependency graph, and answers natural-language questions with **retrieval-augmented generation grounded in file- and line-level citations**.
 
-Everything runs **locally**: parsing, embeddings, vector search, and generation. No proprietary API keys, no per-token billing, no code leaving your infrastructure — which matters if you're analyzing private or sensitive codebases.
+Parsing, embeddings, vector search, and repository indexing run in CodeAtlas; Gemini generation is performed server-side with the configured backend secret.
 
 > **Why it's interesting from an engineering standpoint:** most "chat with your code" tools are thin wrappers around an LLM API and a vector store. CodeAtlas AI instead does real static analysis (Tree-sitter AST parsing → symbol/class/function extraction → dependency graph construction) *before* anything touches an embedding model, so answers are traceable back to actual code structure — not just fuzzy text similarity.
 
@@ -39,7 +38,7 @@ Everything runs **locally**: parsing, embeddings, vector search, and generation.
 | 📍 **File & Line Citations** | No hallucinated references — every claim points to real code |
 | 🕸️ **Dependency Graph Explorer** | Traverse files, symbols, imports, and relationships; query neighbors and shortest paths between nodes |
 | 🌳 **AST-Level Parsing** | Tree-sitter extracts classes, functions, methods, interfaces, enums, and arrow functions from Python, JavaScript, and TypeScript |
-| 🏠 **100% Local Inference** | Ollama runs generation on your own hardware — zero paid AI API dependency |
+| 🤖 **Gemini Grounded Inference** | Server-side Gemini generation constrained by retrieved repository context |
 | ⚡ **Streaming Responses** | `/query/stream` for real-time, token-by-token answers |
 | 🐳 **One-Command Docker Deploy** | Full stack (backend, SQLite, ChromaDB, repo storage) via Docker Compose |
 | 🧩 **Clean Layered Architecture** | Strict separation between HTTP, orchestration, domain logic, and persistence |
@@ -79,8 +78,8 @@ CodeAtlas AI follows a strict **ingest → understand → retrieve → generate*
     rerank → assemble context)
         │
         ▼
-       Ollama
-  (local generation)
+       Gemini
+  (server-side generation)
         │
         ▼
  Grounded Answer + Citations
@@ -123,7 +122,7 @@ to do both jobs.
 | **Code Parsing** | Tree-sitter (multi-language AST parsing) |
 | **Embeddings** | Sentence Transformers (`BAAI/bge-small-en-v1.5`, local) |
 | **Vector Store** | ChromaDB |
-| **LLM Inference** | Ollama (`llama3.2:1b`, local, swappable) |
+| **LLM Inference** | Gemini Interactions API (`gemini-2.5-flash`, configurable) |
 | **Metadata Store** | SQLite locally / PostgreSQL on Render |
 | **Frontend** | React 19 + TypeScript + Vite |
 | **Frontend Data/State** | TanStack Query |
@@ -141,8 +140,8 @@ to do both jobs.
 - Python 3.11
 - Git
 - Docker & Docker Compose *(optional)*
-- Ollama installed and running **outside** Docker
-- 8 GB+ RAM recommended for local embedding and LLM workloads
+- Gemini API key configured on the backend
+- 8 GB+ RAM recommended for local embedding workloads
 
 ---
 
@@ -164,14 +163,7 @@ py -3.11 -m venv backend\.venv
 backend\.venv\Scripts\Activate.ps1
 ```
 
-Ollama is **optional at startup** and only required for AI query generation:
-
-```bash
-ollama serve
-ollama pull llama3.2:1b
-```
-
-> Ollama is intentionally *not* bundled into the CodeAtlas Docker image — bring your own inference server.
+Gemini is used for AI query generation. Copy `backend/.env.example` and set `GEMINI_API_KEY` in the backend environment.
 
 ---
 
@@ -186,17 +178,14 @@ cp backend/.env.example backend/.env
 | `APP_NAME` | `CodeAtlas AI` | Application name |
 | `DEBUG` | `True` | Development diagnostics — set `False` in production |
 | `DATABASE_URL` | `sqlite:///./codeatlas.db` locally | SQLAlchemy database URL. Set this to the Render PostgreSQL connection string in production; `postgres://` is normalized automatically to `postgresql://`. |
-| `AI_PROVIDER` | `gemini` | `gemini`, `ollama`, or deterministic `auto` (Gemini when configured, otherwise Ollama) |
 | `GEMINI_API_KEY` | unset | Backend/Render secret used for server-side Gemini requests; never expose it to Vite |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Configurable Gemini model for repository Q&A |
 | `GEMINI_TIMEOUT_SECONDS` | `60` | Gemini request timeout |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
-| `OLLAMA_MODEL` | `llama3.2:1b` | Generation model |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Local embedding model |
 | `CHROMA_DB_PATH` | `./data/chroma` | ChromaDB persistence path |
 | `LOG_LEVEL` | `INFO` | Application log level |
 
-Config resolution order: repository-root `.env` → `backend/.env` (wins on conflict) → shell environment variables (highest priority). Relative paths resolve from the repository root. `CHROMA_DB_PATH`/`CHROMA_PERSIST_DIRECTORY` and `OLLAMA_HOST`/`OLLAMA_BASE_URL` are aliases.
+Config resolution order: repository-root `.env` → `backend/.env` (wins on conflict) → shell environment variables (highest priority). Relative paths resolve from the repository root. `CHROMA_DB_PATH`/`CHROMA_PERSIST_DIRECTORY` are aliases.
 
 > 🔒 Never commit `.env` files, credentials, databases, vector stores, or model caches.
 
@@ -218,9 +207,9 @@ source .venv/bin/activate
 DEBUG=true python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API available at `http://localhost:8000`. Health/version checks (`GET /health`, `GET /version`) and startup do not require Ollama. `GET /api/query/health` reports backend liveness separately from RAG and the selected AI provider; Ollama is `not_required` when Gemini is selected. All feature routers live under the `/api` prefix.
+API available at `http://localhost:8000`. `GET /api/query/health` reports RAG and Gemini readiness. All feature routers live under the `/api` prefix.
 
-For Render, set `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and a production `CORS_ALLOWED_ORIGINS` containing the deployed frontend origin. Keep all Gemini variables on the backend service only. The local Sentence Transformer embedding model and Chroma collection are unchanged, so no re-indexing is required for this provider switch.
+For Render, set `GEMINI_API_KEY`, `GEMINI_MODEL`, and a production `CORS_ALLOWED_ORIGINS` containing the deployed frontend origin. Keep all Gemini variables on the backend service only. Sentence Transformer embeddings and Chroma collections are unchanged, so no re-indexing is required.
 
 ### Optional external API evaluation
 
@@ -248,7 +237,7 @@ docker compose logs -f backend
 docker compose down
 ```
 
-The Compose setup exposes port `8000`, persists SQLite/ChromaDB/repositories/logs, live-mounts `backend/app` for development, reaches host Ollama via `host.docker.internal`, and runs as a **non-root container user**.
+The Compose setup exposes port `8000`, persists SQLite/ChromaDB/repositories/logs, live-mounts `backend/app` for development, and runs as a **non-root container user**.
 
 ---
 
@@ -322,7 +311,7 @@ sequenceDiagram
     participant ST as Sentence Transformers
     participant DB as ChromaDB
     participant G as Graph Builder
-    participant O as Ollama
+    participant Gm as Gemini
 
     U->>API: Submit GitHub repo URL
     API->>API: Validate & clone repository
@@ -336,8 +325,8 @@ sequenceDiagram
     U->>API: Ask a question
     API->>DB: Embed → search → filter → dedupe → rerank
     DB-->>API: Assembled context
-    API->>O: Generate grounded answer
-    O-->>API: Answer
+    API->>Gm: Generate grounded answer
+    Gm-->>API: Answer
     API-->>U: Answer + file/line citations
 ```
 
@@ -353,7 +342,7 @@ pytest -q
 pytest --cov=backend/app --cov-report=term-missing
 ```
 
-Tests isolate Ollama, embedding, vector-store, filesystem, and Git operations behind deterministic fixtures and mocks — the suite never hits real network or inference services.
+Tests isolate Gemini, embedding, vector-store, filesystem, and Git operations behind deterministic fixtures and mocks — the suite never hits real network or inference services.
 
 ---
 
@@ -387,13 +376,13 @@ npm run preview
 
 Deploy `frontend/dist` to any static host. For Vercel/Netlify: project root `frontend`, build command `npm run build`, publish directory `dist`. Set `VITE_API_BASE_URL` / `VITE_API_PREFIX` in the host's environment settings, and make sure the backend's CORS config allows the deployed frontend origin.
 
-For a full-stack deploy, run `docker compose up --build` from the repository root — the backend owns Ollama, SQLite, ChromaDB, and indexing, while the frontend deploys independently.
+For a full-stack deploy, run `docker compose up --build` from the repository root — the backend owns SQLite, ChromaDB, indexing, and server-side Gemini access, while the frontend deploys independently.
 
 ---
 
 ## 🎯 Design Principles
 
-- **Local-first AI** — no required paid provider, no vendor lock-in
+- **Server-side Gemini** — one explicit, configurable AI provider
 - **Strict layering** — HTTP, orchestration, domain, and persistence never bleed into each other
 - **Deterministic citations** — every answer is traceable, never hand-waved
 - **Typed contracts** — explicit validation end-to-end

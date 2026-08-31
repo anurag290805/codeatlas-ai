@@ -177,7 +177,7 @@ async def query_health(
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> schemas.QueryHealthResponse:
-    """Return independent RAG, selected-provider, and optional Ollama status."""
+    """Return independent RAG and Gemini provider status."""
     provider = await llm_service.check_health()
     retriever_ready = retriever.is_ready()
     health_status = "healthy" if retriever_ready and provider.healthy else "degraded"
@@ -185,8 +185,6 @@ async def query_health(
         health_status, message = "unhealthy", "Repository retrieval is not configured."
     else:
         message = provider.message
-    ollama_reachable = provider.healthy if llm_service.provider_name.value == "ollama" else False
-    ollama_status = "available" if ollama_reachable else ("unavailable" if llm_service.provider_name.value == "ollama" else "not_required")
     return schemas.QueryHealthResponse(
         status=health_status,
         retriever_ready=retriever_ready,
@@ -196,8 +194,6 @@ async def query_health(
         provider_healthy=provider.healthy,
         llm_provider=llm_service.provider_name.value,
         llm_model=llm_service.model_name,
-        ollama_reachable=ollama_reachable,
-        ollama_status=ollama_status,
         model_available=provider.model_available,
         message=message,
     )
@@ -324,13 +320,13 @@ async def _generate_answer(llm_service: LLMService, retrieval_result):
             detail="Answer generation timed out. Please retry.",
         ) from exc
     except LLMModelNotFoundError as exc:
-        logger.error("Configured Ollama model is unavailable error=%s", exc)
+        logger.error("Configured Gemini model is unavailable error=%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
     except LLMProviderOutageError as exc:
-        logger.error("Ollama is unavailable error=%s", exc)
+        logger.error("Gemini provider is unavailable error=%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),

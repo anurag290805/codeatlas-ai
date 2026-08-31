@@ -5,7 +5,6 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlparse
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -52,26 +51,12 @@ class Settings(BaseSettings):
     )
     repositories_dir: Path = _DATA_DIR / "repos"
 
-    # Ollama
-    ai_provider: str = Field(default="gemini", min_length=1)
-    # Pydantic Settings maps this field to GEMINI_API_KEY automatically; do
-    # not add an explicit alias so tests and dependency injection can also
-    # construct Settings(gemini_api_key=...).
+    # Gemini
     gemini_api_key: str | None = None
     gemini_model: str = Field(default="gemini-2.5-flash", min_length=1)
     gemini_timeout_seconds: Annotated[float, Field(gt=0)] = 60.0
     gemini_max_tokens: Annotated[int, Field(gt=0)] = 512
     gemini_temperature: Annotated[float, Field(ge=0, le=2)] = 0.0
-    ollama_base_url: str = Field(
-        default="http://localhost:11434",
-        validation_alias=AliasChoices("OLLAMA_BASE_URL", "OLLAMA_HOST"),
-    )
-    ollama_model: str = Field(default="llama3.2:1b", min_length=1)
-    ollama_timeout_seconds: Annotated[float, Field(gt=0)] = 120.0
-    ollama_temperature: Annotated[float, Field(ge=0, le=2)] = 0.0
-    ollama_max_tokens: Annotated[int, Field(gt=0)] = 256
-    ollama_num_ctx: Annotated[int, Field(gt=0)] = 2048
-
     # Embeddings
     embedding_provider: str = Field(default="sentence_transformers", min_length=1)
     embedding_model: str = Field(default="BAAI/bge-small-en-v1.5", min_length=1)
@@ -100,7 +85,7 @@ class Settings(BaseSettings):
     retrieval_token_budget: Annotated[int, Field(gt=0)] = 1200
     graph_max_traversal_depth: Annotated[int, Field(gt=0, le=100)] = 10
 
-    @field_validator("environment", "embedding_provider", "ai_provider", mode="before")
+    @field_validator("environment", "embedding_provider", mode="before")
     @classmethod
     def normalize_identifier(cls, value: str) -> str:
         normalized = str(value).strip().lower()
@@ -127,22 +112,6 @@ class Settings(BaseSettings):
         if normalized not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ValueError("log_level must be DEBUG, INFO, WARNING, ERROR, or CRITICAL")
         return normalized
-
-    @field_validator("ollama_base_url", mode="before")
-    @classmethod
-    def validate_ollama_base_url(cls, value: str) -> str:
-        url = str(value).strip().rstrip("/")
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("ollama_base_url must be a valid HTTP or HTTPS URL")
-        return url
-
-    @field_validator("ai_provider")
-    @classmethod
-    def validate_ai_provider(cls, value: str) -> str:
-        if value not in {"gemini", "ollama", "auto"}:
-            raise ValueError("ai_provider must be gemini, ollama, or auto")
-        return value
 
     @field_validator("api_prefix", mode="before")
     @classmethod

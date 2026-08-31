@@ -155,13 +155,6 @@ export function HealthStatus({ className }: HealthStatusProps) {
           />
 
           <Signal
-            label="Ollama"
-            value={query.data?.ollama_status === "not_required" ? "Optional" : query.data?.ollama_reachable ? "Available" : "Unavailable"}
-            detail={query.data?.ollama_status === "not_required" ? "Not required by the selected provider" : undefined}
-            state={query.data?.ollama_status === "not_required" || query.data?.ollama_reachable ? "healthy" : "degraded"}
-          />
-
-          <Signal
             label="Model"
             value={query.data?.llm_model ?? "Checking…"}
             detail={

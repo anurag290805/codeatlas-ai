@@ -16,8 +16,6 @@ export interface QueryHealthResponse {
   readonly provider_status: string;
   readonly provider_configured: boolean;
   readonly provider_healthy: boolean;
-  readonly ollama_reachable: boolean;
-  readonly ollama_status: "available" | "unavailable" | "not_required" | string;
   readonly model_available: boolean;
   readonly llm_provider: string;
   readonly llm_model: string;
