@@ -319,11 +319,12 @@ def import_repository(
 def list_repositories(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    workspace_id: str = Depends(ensure_workspace),
     db: Session = Depends(get_db),
 ) -> schemas.RepositoryListResponse:
     """Return a paginated collection of registered repositories."""
-    repositories = [_recover_stale_indexing(db, repository) for repository in crud.list_repositories(db, skip=skip, limit=limit)]
-    total = crud.count_repositories(db)
+    repositories = [_recover_stale_indexing(db, repository) for repository in crud.list_repositories(db, skip=skip, limit=limit, workspace_id=workspace_id)]
+    total = crud.count_repositories(db, workspace_id=workspace_id)
     return schemas.RepositoryListResponse(
         items=[schemas.RepositoryResponse.model_validate(repo) for repo in repositories],
         total=total,

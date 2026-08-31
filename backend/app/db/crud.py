@@ -159,7 +159,8 @@ def get_repository_by_name(session: Session, repository_name: str) -> Repository
 
 
 def list_repositories(
-    session: Session, *, limit: int = 50, offset: int = 0, skip: int | None = None
+    session: Session, *, limit: int = 50, offset: int = 0, skip: int | None = None,
+    workspace_id: str | None = None,
 ) -> Sequence[Repository]:
     """List repositories ordered by most recently created.
 
@@ -179,8 +180,9 @@ def list_repositories(
         .limit(limit)
         .offset(offset)
     )
-    if (workspace_id := _workspace_for(session)) is not None:
-        statement = statement.where(Repository.workspace_id == workspace_id)
+    effective_workspace = workspace_id or _workspace_for(session)
+    if effective_workspace is not None:
+        statement = statement.where(Repository.workspace_id == effective_workspace)
     return session.execute(statement).scalars().all()
 
 
@@ -660,11 +662,12 @@ def delete_query_history(session: Session, query_id: int) -> bool:
     return True
 
 
-def count_repositories(session: Session) -> int:
+def count_repositories(session: Session, *, workspace_id: str | None = None) -> int:
     """Return the total number of registered repositories."""
     statement = select(func.count()).select_from(Repository)
-    if (workspace_id := _workspace_for(session)) is not None:
-        statement = statement.where(Repository.workspace_id == workspace_id)
+    effective_workspace = workspace_id or _workspace_for(session)
+    if effective_workspace is not None:
+        statement = statement.where(Repository.workspace_id == effective_workspace)
     return int(session.scalar(statement) or 0)
 
 

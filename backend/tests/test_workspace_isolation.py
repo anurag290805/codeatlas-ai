@@ -1,7 +1,12 @@
 from fastapi import Response
 from starlette.requests import Request
 
-from app.core.workspace import _decode, _set_cookie
+import time
+
+from fastapi.testclient import TestClient
+
+from app.core.workspace import _decode, _set_cookie, _sign
+from app.main import app
 
 
 def _request(scheme: str) -> Request:
@@ -23,3 +28,20 @@ def test_workspace_cookie_tampering_is_rejected() -> None:
     cookie = response.headers["set-cookie"].split(";", 1)[0].split("=", 1)[1]
     assert _decode(cookie) == "b" * 32
     assert _decode(cookie[:-1] + ("0" if cookie[-1] != "0" else "1")) is None
+
+
+def test_expired_workspace_cookie_is_rejected() -> None:
+    workspace_id = "c" * 32
+    issued_at = int(time.time()) - (60 * 60 * 24 * 31)
+    assert _decode(f"{workspace_id}.{issued_at}.{_sign(workspace_id, issued_at)}") is None
+
+
+def test_repository_listing_rotates_an_invalid_cookie_without_500() -> None:
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/repositories",
+            cookies={"codeatlas_workspace": "invalid-cookie"},
+        )
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert "codeatlas_workspace=" in response.headers.get("set-cookie", "")

@@ -30,7 +30,7 @@ def _decode(value: str | None) -> str | None:
         if abs(time.time() - issued_at) > 60 * 60 * 24 * 30 or not hmac.compare_digest(signature, _sign(workspace_id, issued_at)):
             return None
         return workspace_id if len(workspace_id) == 32 and all(c in "0123456789abcdef" for c in workspace_id) else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 def _set_cookie(response: Response, workspace_id: str, request: Request | None = None) -> None:
