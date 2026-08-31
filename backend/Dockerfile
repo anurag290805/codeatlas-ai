@@ -26,7 +26,7 @@ RUN python -m pip install --upgrade pip \
 
 
 # Runtime stage: contains only the application, its virtual environment, and
-# libraries needed at runtime. Ollama is intentionally external to this image.
+# libraries needed at runtime.
 FROM python:3.11.11-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

@@ -177,28 +177,28 @@ async def query_health(
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> schemas.QueryHealthResponse:
-    """Return backend retrieval readiness and Ollama/model availability."""
-    ollama = await llm_service.check_health()
+    """Return backend retrieval readiness and Gemini/model availability."""
+    gemini = await llm_service.check_health()
     retriever_ready = retriever.is_ready()
     if not retriever_ready:
         health_status = "unhealthy"
         message = "Repository retrieval is not configured."
-    elif not ollama.reachable:
+    elif not gemini.reachable:
         health_status = "degraded"
-        message = ollama.message
-    elif not ollama.model_available:
+        message = gemini.message
+    elif not gemini.model_available:
         health_status = "degraded"
-        message = ollama.message
+        message = gemini.message
     else:
         health_status = "healthy"
-        message = ollama.message
+        message = gemini.message
     return schemas.QueryHealthResponse(
         status=health_status,
         retriever_ready=retriever.is_ready(),
         llm_provider=llm_service.provider_name.value,
         llm_model=llm_service.model_name,
-        ollama_reachable=ollama.reachable,
-        model_available=ollama.model_available,
+        provider_reachable=gemini.reachable,
+        model_available=gemini.model_available,
         message=message,
     )
 
@@ -324,13 +324,13 @@ async def _generate_answer(llm_service: LLMService, retrieval_result):
             detail="Answer generation timed out. Please retry.",
         ) from exc
     except LLMModelNotFoundError as exc:
-        logger.error("Configured Ollama model is unavailable error=%s", exc)
+        logger.error("Configured Gemini model is unavailable error=%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
     except LLMProviderOutageError as exc:
-        logger.error("Ollama is unavailable error=%s", exc)
+        logger.error("Gemini is unavailable error=%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),

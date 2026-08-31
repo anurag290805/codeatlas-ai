@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, Loader2, Server } from "lucide-react";
-import { useHealth, useQueryHealth } from "@/hooks/useHealth";
+import { useQueryHealth } from "@/hooks/useHealth";
 import { cn } from "@/lib/utils";
 
 interface HealthStatusProps {
@@ -21,9 +21,13 @@ function Signal({ label, value, detail, state }: { label: string; value: string;
 }
 
 export function HealthStatus({ className }: HealthStatusProps) {
-  const liveness = useHealth();
   const query = useQueryHealth();
-  const backendState = liveness.isLoading ? "unavailable" : liveness.isError ? "unavailable" : "healthy";
+  // The query health probe is the backend contract used by this panel. It is
+  // fetched through apiClient, so it respects VITE_API_BASE_URL and
+  // VITE_API_PREFIX (normally /api) in the deployed build.
+  // A successful HTTP response proves the backend is reachable. The payload
+  // status describes downstream AI readiness and is rendered separately.
+  const backendState = query.isSuccess ? "healthy" : "unavailable";
   const queryState = query.isLoading ? "unavailable" : query.isError ? "unavailable" : query.data?.status === "healthy" ? "healthy" : "degraded";
   const queryMessage = query.isError ? "AI readiness could not be checked." : query.data?.message;
 
@@ -33,10 +37,10 @@ export function HealthStatus({ className }: HealthStatusProps) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Signal label="Backend" value={backendState === "healthy" ? "Online" : "Unavailable"} state={backendState} />
         <Signal label="AI query" value={queryState === "healthy" ? "Ready" : queryState === "degraded" ? "Degraded" : "Unavailable"} detail={queryMessage} state={queryState} />
-        <Signal label="Ollama" value={query.data?.ollama_reachable ? "Reachable" : "Unavailable"} state={query.data?.ollama_reachable ? "healthy" : "unavailable"} />
+        <Signal label="Gemini" value={query.data?.provider_reachable ? "Reachable" : "Unavailable"} state={query.data?.provider_reachable ? "healthy" : "unavailable"} />
         <Signal label="Model" value={query.data?.llm_model ?? "Checking…"} detail={query.data?.model_available ? "Available" : "Not verified"} state={query.data?.model_available ? "healthy" : "degraded"} />
       </div>
-      {query.isLoading || liveness.isLoading ? <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing platform signals…</div> : queryState === "healthy" ? <p className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" />{query.data?.llm_provider} is ready for grounded answers.</p> : <p className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400"><AlertCircle className="h-3.5 w-3.5" />{queryMessage ?? "AI answers may be unavailable until the provider is ready."}</p>}
+      {query.isLoading ? <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status"><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing platform signals…</div> : queryState === "healthy" ? <p className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" />{query.data?.llm_provider} is ready for grounded answers.</p> : <p className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400"><AlertCircle className="h-3.5 w-3.5" />{queryMessage ?? "AI answers may be unavailable until the provider is ready."}</p>}
     </div>
   </motion.section>;
 }

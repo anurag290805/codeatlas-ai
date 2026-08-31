@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.core.config import Settings
-from app.core.llm import OllamaProvider
+from app.core.llm import GeminiProvider
 from app.utils.logger import _create_file_handler
 
 
@@ -30,9 +30,9 @@ def test_backend_env_file_loads_csv_and_resolves_paths(tmp_path: Path) -> None:
 
 def test_shell_environment_overrides_env_file(tmp_path: Path, monkeypatch) -> None:
     env_file = tmp_path / ".env"
-    env_file.write_text("OLLAMA_MODEL=from-file\n", encoding="utf-8")
-    monkeypatch.setenv("OLLAMA_MODEL", "from-shell")
-    assert Settings(_env_file=env_file).ollama_model == "from-shell"
+    env_file.write_text("GEMINI_MODEL=from-file\n", encoding="utf-8")
+    monkeypatch.setenv("GEMINI_MODEL", "from-shell")
+    assert Settings(_env_file=env_file).gemini_model == "from-shell"
 
 
 def test_debug_accepts_deployment_labels(monkeypatch) -> None:
@@ -90,7 +90,7 @@ class _HealthResponse:
     status_code = 200
 
     def json(self):
-        return {"models": [{"name": "llama3.2:1b"}]}
+        return {"name": "gemini-2.5-flash"}
 
 
 class _HealthClient:
@@ -98,9 +98,9 @@ class _HealthClient:
         return _HealthResponse()
 
 
-def test_ollama_health_probe_reports_model_availability() -> None:
-    settings = Settings(_env_file=None, ollama_model="llama3.2:1b")
-    health = asyncio.run(OllamaProvider(settings=settings, client=_HealthClient()).check_health())
+def test_gemini_health_probe_reports_model_availability() -> None:
+    settings = Settings(_env_file=None, gemini_api_key="test-key", gemini_model="gemini-2.5-flash")
+    health = asyncio.run(GeminiProvider(settings=settings, client=_HealthClient()).check_health())
     assert health.reachable is True
     assert health.model_available is True
 
