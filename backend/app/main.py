@@ -138,7 +138,7 @@ async def _request_context_middleware(request: Request, call_next):
             _workspace_context.reset(workspace_token)
 
     if new_workspace and workspace_id is not None:
-        set_workspace_cookie(response, workspace_id)
+        set_workspace_cookie(response, workspace_id, request)
 
     duration_ms = (time.monotonic() - start_time) * 1000
     response.headers["X-Request-ID"] = correlation_id

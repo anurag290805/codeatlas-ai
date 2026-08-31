@@ -33,9 +33,10 @@ def _decode(value: str | None) -> str | None:
     except (TypeError, ValueError):
         return None
 
-def _set_cookie(response: Response, workspace_id: str) -> None:
+def _set_cookie(response: Response, workspace_id: str, request: Request | None = None) -> None:
     issued_at = int(time.time())
-    response.set_cookie(WORKSPACE_COOKIE, f"{workspace_id}.{issued_at}.{_sign(workspace_id, issued_at)}", httponly=True, secure=get_settings().environment == "production", samesite="none" if get_settings().environment == "production" else "lax", max_age=60 * 60 * 24 * 30, path="/")
+    cross_site = get_settings().environment == "production" or (request is not None and request.url.scheme == "https")
+    response.set_cookie(WORKSPACE_COOKIE, f"{workspace_id}.{issued_at}.{_sign(workspace_id, issued_at)}", httponly=True, secure=cross_site, samesite="none" if cross_site else "lax", max_age=60 * 60 * 24 * 30, path="/")
 
 async def ensure_workspace(request: Request, response: Response, db: Session = Depends(get_db)) -> str:
     if getattr(request.state, "workspace_id", None):
@@ -45,7 +46,7 @@ async def ensure_workspace(request: Request, response: Response, db: Session = D
         workspace_id = secrets.token_hex(16)
         db.add(Workspace(id=workspace_id))
         db.commit()
-        _set_cookie(response, workspace_id)
+        _set_cookie(response, workspace_id, request)
     _workspace_context.set(workspace_id)
     request.state.workspace_id = workspace_id
     return workspace_id
@@ -64,5 +65,5 @@ def initialize_request_workspace(request: Request) -> tuple[str, bool]:
     return workspace_id, created
 
 
-def set_workspace_cookie(response: Response, workspace_id: str) -> None:
-    _set_cookie(response, workspace_id)
+def set_workspace_cookie(response: Response, workspace_id: str, request: Request | None = None) -> None:
+    _set_cookie(response, workspace_id, request)
