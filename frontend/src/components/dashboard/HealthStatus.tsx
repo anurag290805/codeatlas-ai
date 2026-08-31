@@ -25,13 +25,7 @@ export function HealthStatus({ className }: HealthStatusProps) {
   // The query health endpoint is the authoritative public platform probe. It
   // checks the same backend path used by the production dashboard and avoids
   // treating the root route's unsupported HEAD response as an outage.
-  const backendState = query.isLoading
-    ? "unavailable"
-    : query.isError
-      ? "unavailable"
-      : query.data?.status === "healthy"
-        ? "healthy"
-        : "degraded";
+const backendState = query.isSuccess ? "healthy" : "unavailable";
   const queryState = query.isLoading ? "unavailable" : query.isError ? "unavailable" : query.data?.status === "healthy" ? "healthy" : "degraded";
   const queryMessage = query.isError ? "AI readiness could not be checked." : query.data?.message;
 
