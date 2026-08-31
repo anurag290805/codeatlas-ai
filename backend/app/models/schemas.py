@@ -173,7 +173,12 @@ class QueryResponse(BaseModel):
 class QueryHealthResponse(BaseModel):
     status: str
     retriever_ready: bool
+    rag_status: str = "ready"
+    provider_status: str = "unavailable"
+    provider_configured: bool = False
+    provider_healthy: bool = False
     ollama_reachable: bool
+    ollama_status: str = "not_required"
     model_available: bool
     llm_provider: str
     llm_model: str

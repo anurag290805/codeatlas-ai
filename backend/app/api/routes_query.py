@@ -177,28 +177,28 @@ async def query_health(
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> schemas.QueryHealthResponse:
-    """Return backend retrieval readiness and Ollama/model availability."""
-    ollama = await llm_service.check_health()
+    """Return independent RAG, selected-provider, and optional Ollama status."""
+    provider = await llm_service.check_health()
     retriever_ready = retriever.is_ready()
+    health_status = "healthy" if retriever_ready and provider.healthy else "degraded"
     if not retriever_ready:
-        health_status = "unhealthy"
-        message = "Repository retrieval is not configured."
-    elif not ollama.reachable:
-        health_status = "degraded"
-        message = ollama.message
-    elif not ollama.model_available:
-        health_status = "degraded"
-        message = ollama.message
+        health_status, message = "unhealthy", "Repository retrieval is not configured."
     else:
-        health_status = "healthy"
-        message = ollama.message
+        message = provider.message
+    ollama_reachable = provider.healthy if llm_service.provider_name.value == "ollama" else False
+    ollama_status = "available" if ollama_reachable else ("unavailable" if llm_service.provider_name.value == "ollama" else "not_required")
     return schemas.QueryHealthResponse(
         status=health_status,
-        retriever_ready=retriever.is_ready(),
+        retriever_ready=retriever_ready,
+        rag_status="ready" if retriever_ready else "unavailable",
+        provider_status=provider.status,
+        provider_configured=provider.configured,
+        provider_healthy=provider.healthy,
         llm_provider=llm_service.provider_name.value,
         llm_model=llm_service.model_name,
-        ollama_reachable=ollama.reachable,
-        model_available=ollama.model_available,
+        ollama_reachable=ollama_reachable,
+        ollama_status=ollama_status,
+        model_available=provider.model_available,
         message=message,
     )
 

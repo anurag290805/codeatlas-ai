@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     repositories_dir: Path = _DATA_DIR / "repos"
 
     # Ollama
+    ai_provider: str = Field(default="gemini", min_length=1)
+    # Pydantic Settings maps this field to GEMINI_API_KEY automatically; do
+    # not add an explicit alias so tests and dependency injection can also
+    # construct Settings(gemini_api_key=...).
+    gemini_api_key: str | None = None
+    gemini_model: str = Field(default="gemini-2.5-flash", min_length=1)
+    gemini_timeout_seconds: Annotated[float, Field(gt=0)] = 60.0
+    gemini_max_tokens: Annotated[int, Field(gt=0)] = 512
+    gemini_temperature: Annotated[float, Field(ge=0, le=2)] = 0.0
     ollama_base_url: str = Field(
         default="http://localhost:11434",
         validation_alias=AliasChoices("OLLAMA_BASE_URL", "OLLAMA_HOST"),
@@ -91,7 +100,7 @@ class Settings(BaseSettings):
     retrieval_token_budget: Annotated[int, Field(gt=0)] = 1200
     graph_max_traversal_depth: Annotated[int, Field(gt=0, le=100)] = 10
 
-    @field_validator("environment", "embedding_provider", mode="before")
+    @field_validator("environment", "embedding_provider", "ai_provider", mode="before")
     @classmethod
     def normalize_identifier(cls, value: str) -> str:
         normalized = str(value).strip().lower()
@@ -127,6 +136,13 @@ class Settings(BaseSettings):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("ollama_base_url must be a valid HTTP or HTTPS URL")
         return url
+
+    @field_validator("ai_provider")
+    @classmethod
+    def validate_ai_provider(cls, value: str) -> str:
+        if value not in {"gemini", "ollama", "auto"}:
+            raise ValueError("ai_provider must be gemini, ollama, or auto")
+        return value
 
     @field_validator("api_prefix", mode="before")
     @classmethod

@@ -186,6 +186,10 @@ cp backend/.env.example backend/.env
 | `APP_NAME` | `CodeAtlas AI` | Application name |
 | `DEBUG` | `True` | Development diagnostics — set `False` in production |
 | `DATABASE_URL` | `sqlite:///./codeatlas.db` locally | SQLAlchemy database URL. Set this to the Render PostgreSQL connection string in production; `postgres://` is normalized automatically to `postgresql://`. |
+| `AI_PROVIDER` | `gemini` | `gemini`, `ollama`, or deterministic `auto` (Gemini when configured, otherwise Ollama) |
+| `GEMINI_API_KEY` | unset | Backend/Render secret used for server-side Gemini requests; never expose it to Vite |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Configurable Gemini model for repository Q&A |
+| `GEMINI_TIMEOUT_SECONDS` | `60` | Gemini request timeout |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2:1b` | Generation model |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Local embedding model |
@@ -214,7 +218,19 @@ source .venv/bin/activate
 DEBUG=true python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API available at `http://localhost:8000`. Health/version checks (`GET /health`, `GET /version`) and startup **do not require Ollama** to be running — the app degrades gracefully. All feature routers live under the `/api` prefix.
+API available at `http://localhost:8000`. Health/version checks (`GET /health`, `GET /version`) and startup do not require Ollama. `GET /api/query/health` reports backend liveness separately from RAG and the selected AI provider; Ollama is `not_required` when Gemini is selected. All feature routers live under the `/api` prefix.
+
+For Render, set `AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL`, and a production `CORS_ALLOWED_ORIGINS` containing the deployed frontend origin. Keep all Gemini variables on the backend service only. The local Sentence Transformer embedding model and Chroma collection are unchanged, so no re-indexing is required for this provider switch.
+
+### Optional external API evaluation
+
+The public-apis catalog was evaluated for developer-facing value. No new external API was added in this pass: repository Q&A and indexing have no dependency on third-party metadata services, and introducing unauthenticated/rate-limited calls would add failure modes without a corresponding UI contract. The highest-value future candidates are GitHub repository metadata and OSV vulnerability metadata, both behind explicit, cached feature services rather than the query path.
+
+| API / Service | CodeAtlas feature | Value | Auth required | Rate limits | Integrated? |
+|---|---|---|---|---|---|
+| GitHub REST API | repository activity, releases, contributors | High for repository overview | Public data usually no; tokens improve limits/private access | Yes | No |
+| OSV API | dependency vulnerability intelligence | High for risk analysis | No API key for basic use | Service limits apply | No |
+| npm/PyPI registries | latest dependency metadata | Medium; useful after manifest extraction | Usually no for public packages | Yes | No |
 
 ---
 

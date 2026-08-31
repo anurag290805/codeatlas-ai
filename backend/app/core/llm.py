@@ -1,4 +1,4 @@
-"""Async Ollama-backed language-model service for CodeAtlas AI.
+"""Provider-neutral, async language-model service for CodeAtlas AI.
 
 The module deliberately has one provider implementation and no cloud-provider
 SDK dependencies.  ``OllamaProvider`` communicates with Ollama's local REST
@@ -24,8 +24,9 @@ from app.core.config import Settings, get_settings
 
 
 class LLMProviderName(str, Enum):
-    """Supported local language-model provider."""
+    """Supported language-model providers."""
 
+    GEMINI = "gemini"
     OLLAMA = "ollama"
 
 
@@ -78,6 +79,17 @@ class OllamaHealth:
 
     reachable: bool
     model_available: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class ProviderHealth:
+    """Safe provider readiness information exposed by the health route."""
+
+    configured: bool
+    healthy: bool
+    model_available: bool
+    status: str
     message: str
 
 
@@ -177,6 +189,11 @@ class AbstractLLMProvider(ABC):
 
     provider_name: LLMProviderName
 
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        """Return the configured model identifier."""
+
     @abstractmethod
     async def generate(self, request: LLMRequest) -> tuple[str, UsageMetadata | None]:
         """Generate one complete response."""
@@ -197,6 +214,10 @@ class OllamaProvider(AbstractLLMProvider):
     )
 
     provider_name = LLMProviderName.OLLAMA
+
+    @property
+    def model_name(self) -> str:
+        return self._settings.ollama_model
 
     def __init__(
         self,
@@ -397,8 +418,100 @@ class OllamaProvider(AbstractLLMProvider):
             raise LLMMalformedResponseError(f"Ollama returned HTTP {response.status_code}")
 
 
+class GeminiProvider(AbstractLLMProvider):
+    """Server-side Gemini REST provider; the API key never reaches clients."""
+
+    provider_name = LLMProviderName.GEMINI
+    _BASE_URL = "https://generativelanguage.googleapis.com"
+    _SYSTEM_PROMPT = (
+        "You are CodeAtlas AI, a repository code assistant. Use only the "
+        "repository context delimited below as evidence. If it is insufficient, "
+        "say so explicitly; never invent files, symbols, or behavior."
+    )
+
+    def __init__(self, settings: Settings | None = None, client: _AsyncClient | None = None) -> None:
+        self._settings = settings or get_settings()
+        self._owns_client = client is None
+        self._client = client or httpx.AsyncClient(base_url=self._BASE_URL)
+        logger.info("Initialized Gemini provider model={}", self.model_name)
+
+    @property
+    def model_name(self) -> str:
+        return self._settings.gemini_model
+
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self._client.aclose()
+
+    async def check_health(self) -> ProviderHealth:
+        if not self._settings.gemini_api_key:
+            return ProviderHealth(False, False, False, "configuration_missing", "Gemini API key is not configured.")
+        try:
+            response = await self._client.get(f"/v1beta/models/{self.model_name}", headers={"x-goog-api-key": self._settings.gemini_api_key}, timeout=5.0)
+            if response.status_code in {401, 403}:
+                return ProviderHealth(True, False, False, "authentication_failure", "Gemini rejected the configured API key.")
+            if response.status_code == 429:
+                return ProviderHealth(True, False, False, "rate_limited", "Gemini is rate limiting health checks.")
+            if response.status_code == 404:
+                return ProviderHealth(True, False, False, "model_unavailable", "The configured Gemini model was not found.")
+            if response.status_code >= 400:
+                return ProviderHealth(True, False, False, "unavailable", "Gemini health check failed.")
+            return ProviderHealth(True, True, True, "healthy", "Gemini and the configured model are available.")
+        except httpx.TimeoutException:
+            return ProviderHealth(True, False, False, "timeout", "Gemini health check timed out.")
+        except httpx.RequestError:
+            return ProviderHealth(True, False, False, "unavailable", "Gemini is unreachable.")
+
+    async def generate(self, request: LLMRequest) -> tuple[str, UsageMetadata | None]:
+        if not self._settings.gemini_api_key:
+            raise LLMAuthenticationError("Gemini is not configured on the server.")
+        body: dict[str, Any] = {
+            "model": request.model or self.model_name,
+            "input": f"{self._SYSTEM_PROMPT}\n\n{self._prompt(request)}",
+            "generation_config": {"temperature": request.temperature, "max_output_tokens": min(request.max_tokens, self._settings.gemini_max_tokens)},
+            "store": False,
+        }
+        try:
+            response = await self._client.post("/v1beta/interactions", headers={"x-goog-api-key": self._settings.gemini_api_key}, json=body, timeout=self._settings.gemini_timeout_seconds)
+        except httpx.TimeoutException as exc:
+            raise LLMTimeoutError("Gemini generation timed out.") from exc
+        except httpx.RequestError as exc:
+            raise LLMProviderOutageError("Gemini could not be reached.") from exc
+        if response.status_code in {401, 403}:
+            raise LLMAuthenticationError("Gemini rejected the configured API key.")
+        if response.status_code == 404:
+            raise LLMModelNotFoundError("The configured Gemini model was not found.")
+        if response.status_code == 429:
+            raise LLMRateLimitError("Gemini rate limit or quota was exceeded.")
+        if response.status_code >= 500:
+            raise LLMProviderOutageError("Gemini returned a server error.")
+        if response.status_code >= 400:
+            raise LLMMalformedResponseError("Gemini rejected the request.")
+        try:
+            data = response.json()
+            steps = data["steps"]
+            parts = [part for step in steps if step.get("type") == "model_output" for part in step.get("content", [])]
+            text = "".join(str(part["text"]) for part in parts if isinstance(part, dict) and "text" in part)
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise LLMMalformedResponseError("Gemini returned an invalid response.") from exc
+        if not text.strip():
+            raise LLMMalformedResponseError("Gemini returned an empty response.")
+        usage_data = data.get("usage", {})
+        usage = UsageMetadata(prompt_tokens=int(usage_data.get("total_input_tokens", 0)), completion_tokens=int(usage_data.get("total_output_tokens", 0)), total_tokens=int(usage_data.get("total_tokens", 0))) if usage_data else None
+        return text, usage
+
+    async def generate_stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
+        text, usage = await self.generate(request)
+        yield LLMStreamChunk(delta=text, is_final=True, provider=self.provider_name, model=request.model or self.model_name, usage=usage)
+
+    @staticmethod
+    def _prompt(request: LLMRequest) -> str:
+        context = request.context.strip() or "(No repository context was retrieved.)"
+        return f"<repository_context>\n{context}\n</repository_context>\n\n<question>\n{request.query}\n</question>"
+
+
 class LLMService:
-    """Validate requests and orchestrate prompt generation through Ollama."""
+    """Validate requests and orchestrate prompt generation through one provider."""
 
     def __init__(
         self,
@@ -406,23 +519,28 @@ class LLMService:
         settings: Settings | None = None,
     ) -> None:
         self._settings = settings or get_settings()
-        self._provider = provider or OllamaProvider(self._settings)
+        self._provider = provider or self._select_provider()
         self.provider_name = self._provider.provider_name
-        self.model_name = self._settings.ollama_model
+        self.model_name = self._provider.model_name
 
     def is_ready(self) -> bool:
-        """Return whether the service has a configured Ollama provider."""
-        return self.provider_name is LLMProviderName.OLLAMA and bool(self.model_name)
+        """Return whether the selected provider is configured."""
+        return bool(self.model_name) and (self.provider_name is not LLMProviderName.GEMINI or bool(self._settings.gemini_api_key))
 
-    async def check_health(self) -> OllamaHealth:
-        """Probe provider readiness without loading a model or generating text."""
-        if not self.is_ready() or not isinstance(self._provider, OllamaProvider):
-            return OllamaHealth(
-                reachable=False,
-                model_available=False,
-                message="The LLM provider is not configured.",
-            )
-        return await self._provider.check_health()
+    def _select_provider(self) -> AbstractLLMProvider:
+        if self._settings.ai_provider == "ollama":
+            return OllamaProvider(self._settings)
+        if self._settings.ai_provider == "auto" and not self._settings.gemini_api_key:
+            return OllamaProvider(self._settings)
+        return GeminiProvider(self._settings)
+
+    async def check_health(self) -> ProviderHealth:
+        if not self.is_ready():
+            return ProviderHealth(False, False, False, "configuration_missing", "The selected AI provider is not configured.")
+        health = await self._provider.check_health()
+        if isinstance(health, OllamaHealth):
+            return ProviderHealth(True, health.reachable and health.model_available, health.model_available, "healthy" if health.reachable and health.model_available else "unavailable", health.message)
+        return health
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate and normalize one grounded answer."""
@@ -475,13 +593,14 @@ class LLMService:
             try:
                 parsed = json.loads(text)
             except json.JSONDecodeError as exc:
-                raise LLMMalformedResponseError("Ollama JSON response could not be decoded") from exc
+                raise LLMMalformedResponseError("AI provider JSON response could not be decoded") from exc
             if not isinstance(parsed, dict) or not isinstance(parsed.get("answer"), str):
-                raise LLMMalformedResponseError("Ollama JSON response must contain an answer")
+                raise LLMMalformedResponseError("AI provider JSON response must contain an answer")
             text = parsed["answer"]
         return LLMResponse(
             answer=text.strip(),
             citations=request.citations,
+            provider=self.provider_name,
             model=request.model or self.model_name,
             usage=usage,
             latency_seconds=max(0.0, latency),

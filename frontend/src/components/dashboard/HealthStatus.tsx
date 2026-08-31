@@ -79,10 +79,10 @@ export function HealthStatus({ className }: HealthStatusProps) {
     : "unavailable";
 
   const queryState: HealthState = query.isLoading
-    ? "unavailable"
+    ? "degraded"
     : query.isError
       ? "unavailable"
-      : query.data?.status === "healthy"
+      : query.data?.provider_healthy && query.data?.rag_status === "ready"
         ? "healthy"
         : "degraded";
 
@@ -147,11 +147,18 @@ export function HealthStatus({ className }: HealthStatusProps) {
           />
 
           <Signal
-            label="Ollama"
-            value={query.data?.ollama_reachable ? "Reachable" : "Unavailable"}
+            label="Provider"
+            value={query.data?.llm_provider ?? "Checking…"}
             state={
-              query.data?.ollama_reachable ? "healthy" : "unavailable"
+              query.data?.provider_healthy ? "healthy" : "unavailable"
             }
+          />
+
+          <Signal
+            label="Ollama"
+            value={query.data?.ollama_status === "not_required" ? "Optional" : query.data?.ollama_reachable ? "Available" : "Unavailable"}
+            detail={query.data?.ollama_status === "not_required" ? "Not required by the selected provider" : undefined}
+            state={query.data?.ollama_status === "not_required" || query.data?.ollama_reachable ? "healthy" : "degraded"}
           />
 
           <Signal
@@ -161,7 +168,7 @@ export function HealthStatus({ className }: HealthStatusProps) {
               query.data?.model_available ? "Available" : "Not verified"
             }
             state={
-              query.data?.model_available ? "healthy" : "degraded"
+              query.data?.provider_healthy ? "healthy" : "degraded"
             }
           />
         </div>
