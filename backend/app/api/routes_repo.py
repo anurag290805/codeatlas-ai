@@ -24,6 +24,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from app.core.workspace import ensure_workspace
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.embeddings import EmbeddingGenerationError, EmbeddingService
 from app.core.git_handler import GitRepositoryManager, RepositoryOperationError
@@ -286,12 +287,19 @@ def import_repository(
             raise HTTPException(status_code=404, detail=f"Repository not found: {existing.id}")
         logger.info("Retrying failed repository import repository_id=%s url=%s", repository.id, canonical_url)
     else:
-        repository = crud.create_repository(
-            db,
-            repository_name=identity.full_name,
-            repository_url=canonical_url,
-            default_branch=payload.branch or "main",
-        )
+        try:
+            repository = crud.create_repository(
+                db,
+                repository_name=identity.full_name,
+                repository_url=canonical_url,
+                default_branch=payload.branch or "main",
+            )
+        except IntegrityError as exc:
+            logger.warning("Repository import conflict workspace-scoped url=%s", canonical_url)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Repository is already registered in this workspace.",
+            ) from exc
 
     logger.info("Repository import scheduled repository_id=%s url=%s", repository.id, canonical_url)
 

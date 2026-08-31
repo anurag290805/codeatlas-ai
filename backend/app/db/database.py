@@ -169,6 +169,19 @@ def initialize_database() -> None:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE repositories ADD COLUMN workspace_id VARCHAR(32)"))
 
+        # The original schema enforced repository_url globally. That
+        # constraint is incompatible with isolated workspaces: two
+        # workspaces may independently import the same public repository.
+        # Render uses PostgreSQL, where this additive/idempotent migration is
+        # safe to run during startup. Legacy rows remain quarantined.
+        if engine.dialect.name == "postgresql":
+            constraints = {item["name"] for item in inspector.get_unique_constraints("repositories")}
+            with engine.begin() as connection:
+                if "uq_repositories_repository_url" in constraints:
+                    connection.execute(text("ALTER TABLE repositories DROP CONSTRAINT uq_repositories_repository_url"))
+                if "uq_repositories_workspace_url" not in constraints:
+                    connection.execute(text("ALTER TABLE repositories ADD CONSTRAINT uq_repositories_workspace_url UNIQUE (workspace_id, repository_url)"))
+
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
 
