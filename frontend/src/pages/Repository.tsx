@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, ArrowLeft, GitBranch, Loader2, RefreshCw, ShieldCheck, Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
@@ -14,6 +14,7 @@ import type {
   RepositoryDetailResponse,
   RepositoryProcessingStatus,
 } from "@/types/repository";
+import { useGithubIntelligence } from "@/hooks/useIntelligence";
 
 function repositoryName(data: RepositoryDetailResponse): string {
   const value = data.repository_name.trim();
@@ -93,6 +94,7 @@ export function Repository() {
   });
   const selectedPath = selection.repositoryId === repositoryId ? selection.path : undefined;
   const fileQuery = useRepositoryFile(repositoryId, selectedPath);
+  const githubQuery = useGithubIntelligence(repositoryId);
 
   const repository = useMemo(
     () => (repositoryQuery.data ? toRepository(repositoryQuery.data) : undefined),
@@ -145,6 +147,12 @@ export function Repository() {
         onRefresh={() => void repositoryQuery.refetch()}
         isRefreshing={repositoryQuery.isFetching}
       />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><GitBranch className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">GitHub stars</p><p className="font-semibold">{githubQuery.data?.available ? githubQuery.data.stars.toLocaleString() : "Unavailable"}</p></div></div></CardContent></Card>
+        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><Boxes className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">Dependencies</p><Link className="font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/dependencies`}>Inspect packages</Link></div></div></CardContent></Card>
+        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><ShieldCheck className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">Security</p><Link className="font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/security`}>Scan with OSV</Link></div></div></CardContent></Card>
+      </div>
 
       <RepositoryOverview repository={repository} />
       <RepositoryStats stats={repository.statistics!} />

@@ -27,6 +27,7 @@ from app.api.routes_graph import router as graph_router
 from app.api.routes_analytics import router as analytics_router
 from app.api.routes_query import router as query_router
 from app.api.routes_repo import router as repo_router
+from app.api.routes_intelligence import router as intelligence_router
 from app.config import get_settings
 from app.db.database import close_db, init_db
 from app.utils.logger import get_logger
@@ -201,6 +202,7 @@ def _register_routers(app: FastAPI) -> None:
     api_prefix = settings.api_prefix
 
     app.include_router(repo_router, prefix=api_prefix)
+    app.include_router(intelligence_router, prefix=api_prefix)
     app.include_router(query_router, prefix=api_prefix)
     app.include_router(graph_router, prefix=api_prefix)
     app.include_router(analytics_router, prefix=api_prefix)

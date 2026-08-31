@@ -101,6 +101,64 @@ class RepositoryHealthResponse(BaseModel):
     pending: int = Field(ge=0)
 
 
+class GithubIntelligenceResponse(BaseModel):
+    available: bool
+    message: str | None = None
+    full_name: str | None = None
+    description: str | None = None
+    stars: int = 0
+    forks: int = 0
+    watchers: int = 0
+    open_issues: int = 0
+    default_branch: str | None = None
+    license: str | None = None
+    html_url: str | None = None
+
+
+class DependencyResponse(BaseModel):
+    ecosystem: str
+    name: str
+    installed_version: str | None = None
+    requested_version: str | None = None
+    latest_version: str | None = None
+    description: str | None = None
+    dependency_type: str
+    source_file: str
+    status: str = "unknown"
+    vulnerabilities: list["VulnerabilityResponse"] = Field(default_factory=list)
+
+
+class DependenciesResponse(BaseModel):
+    available: bool
+    message: str | None = None
+    checked_at: datetime
+    dependencies: list[DependencyResponse] = Field(default_factory=list)
+
+
+class VulnerabilityResponse(BaseModel):
+    id: str
+    summary: str | None = None
+    severity: str = "Unknown"
+    affected_versions: list[str] = Field(default_factory=list)
+    fixed_versions: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+    ecosystem: str
+    package: str
+    installed_version: str
+
+
+class SecurityResponse(BaseModel):
+    available: bool
+    message: str | None = None
+    checked_at: datetime
+    dependencies_scanned: int = 0
+    severity_counts: dict[str, int] = Field(default_factory=dict)
+    vulnerabilities: list[VulnerabilityResponse] = Field(default_factory=list)
+
+
+DependencyResponse.model_rebuild()
+
+
 RepositoryImportResponse = RepositoryResponse
 
 

@@ -11,6 +11,8 @@ const chat = lazy(() => import("@/pages/Chat"));
 const graph = lazy(() => import("@/pages/Graph"));
 const analytics = lazy(() => import("@/pages/Analytics"));
 const settings = lazy(() => import("@/pages/Settings"));
+const dependencies = lazy(() => import("@/pages/Dependencies"));
+const security = lazy(() => import("@/pages/Security"));
 
 function withSuspense(element: ReactNode) {
   return <Suspense fallback={<div className="flex min-h-[20rem] items-center justify-center text-sm text-muted-foreground" role="status">Loading workspace…</div>}>{element}</Suspense>;
@@ -20,6 +22,8 @@ export const router = createBrowserRouter([{ path: "/", element: createElement(d
   { index: true, element: withSuspense(createElement(dashboard)) },
   { path: "repositories", element: withSuspense(createElement(repositories)) },
   { path: "repositories/:repositoryId", element: withSuspense(createElement(repository)) },
+  { path: "repositories/:repositoryId/dependencies", element: withSuspense(createElement(dependencies)) },
+  { path: "repositories/:repositoryId/security", element: withSuspense(createElement(security)) },
   { path: "search", element: withSuspense(createElement(search)) },
   { path: "chat", element: withSuspense(createElement(chat)) },
   { path: "chat/:repositoryId", element: withSuspense(createElement(chat)) },

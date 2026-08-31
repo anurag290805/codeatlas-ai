@@ -423,3 +423,31 @@ Distributed under the license included in [`LICENSE`](LICENSE).
 **Built for developers who want to understand a codebase, not just search it.**
 
 </div>
+# CodeAtlas AI
+
+CodeAtlas is a Gemini-only code intelligence workspace. It ingests public GitHub repositories, parses and chunks source code, creates Sentence Transformer embeddings, stores them in ChromaDB, and answers grounded questions with file citations.
+
+## Developer intelligence
+
+Indexed repositories expose optional, feature-isolated intelligence endpoints and views for:
+
+- GitHub public metadata (stars, forks, watchers, issues, branch, license)
+- npm and PyPI package metadata from supported repository manifests
+- OSV vulnerability matching for pinned dependency versions
+- normalized dependency and security results with refreshable frontend queries
+
+Supported manifests are `package.json`, `package-lock.json`, `requirements.txt`, and `pyproject.toml`. External provider failures do not stop repository ingestion or RAG.
+
+## Appearance
+
+The UI supports System, Light, Dark, and a branded Colorful theme. The selection is persisted by `next-themes` and applies without a reload.
+
+## Environment variables
+
+Backend deployment requires `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_MAX_TOKENS`, `GEMINI_TEMPERATURE`, `CORS_ALLOWED_ORIGINS`, and the existing `DATABASE_URL`. Public GitHub, OSV, npm, and PyPI APIs do not require keys.
+
+The frontend uses `VITE_API_BASE_URL` and `VITE_API_PREFIX`. Never place `GEMINI_API_KEY` in frontend or Vercel environment variables.
+
+## Local checks
+
+Run the backend test suite with `pytest -q` from `backend/`, and the frontend checks with `npm run lint` and `npm run build` from `frontend/`.
