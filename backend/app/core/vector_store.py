@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,6 +25,7 @@ from typing import Any
 from app.config import get_settings
 from app.core.embeddings import ChunkEmbedding
 from app.utils.logger import get_logger
+from app.core.workspace import current_workspace_id
 
 logger = get_logger(__name__)
 
@@ -509,14 +511,20 @@ class VectorStoreService:
         )
 
     @staticmethod
-    def _collection_name_for(repository_id: str) -> str:
+    def _collection_name_for(repository_id: str, workspace_id: str | None = None) -> str:
         """Derive the collection name for a repository's isolated index."""
-        return f"{_COLLECTION_NAME_PREFIX}_{repository_id}"
+        workspace = workspace_id or current_workspace_id()
+        if workspace is None:
+            return f"{_COLLECTION_NAME_PREFIX}_{repository_id}"
+        namespace = hashlib.sha256(workspace.encode()).hexdigest()[:24]
+        return f"{_COLLECTION_NAME_PREFIX}_{namespace}_{repository_id}"
 
     def _active_collection_name(self, repository_id: str) -> str:
         """Resolve the durable collection pointer, with legacy-name fallback."""
         settings = get_settings()
-        pointer = settings.chroma_persist_directory / f"active_{repository_id}.json"
+        namespace = current_workspace_id()
+        pointer_name = hashlib.sha256(namespace.encode()).hexdigest()[:24] if namespace else "legacy"
+        pointer = settings.chroma_persist_directory / f"active_{pointer_name}_{repository_id}.json"
         try:
             payload = json.loads(pointer.read_text(encoding="utf-8"))
             name = str(payload.get("collection", ""))
@@ -544,7 +552,9 @@ class VectorStoreService:
         """Publish a staged generation by atomically replacing its pointer."""
         settings = get_settings()
         settings.chroma_persist_directory.mkdir(parents=True, exist_ok=True)
-        pointer = settings.chroma_persist_directory / f"active_{repository_id}.json"
+        namespace = current_workspace_id()
+        pointer_name = hashlib.sha256(namespace.encode()).hexdigest()[:24] if namespace else "legacy"
+        pointer = settings.chroma_persist_directory / f"active_{pointer_name}_{repository_id}.json"
         old_name = self._active_collection_name(repository_id)
         temporary = pointer.with_suffix(f".json.tmp-{uuid.uuid4().hex}")
         temporary.write_text(json.dumps({"collection": collection_name}), encoding="utf-8")
@@ -669,7 +679,9 @@ class VectorStoreService:
             return
         self._store.delete_collection(collection_name)
         try:
-            (get_settings().chroma_persist_directory / f"active_{repository_id}.json").unlink(missing_ok=True)
+            namespace = current_workspace_id()
+            pointer_name = hashlib.sha256(namespace.encode()).hexdigest()[:24] if namespace else "legacy"
+            (get_settings().chroma_persist_directory / f"active_{pointer_name}_{repository_id}.json").unlink(missing_ok=True)
         except OSError:
             logger.warning("Failed to remove active collection pointer repository_id=%s", repository_id)
 

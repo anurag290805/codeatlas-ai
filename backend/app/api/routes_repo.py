@@ -22,6 +22,7 @@ from pathlib import Path
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from app.core.workspace import ensure_workspace
 from sqlalchemy.orm import Session
 
 from app.core.embeddings import EmbeddingGenerationError, EmbeddingService
@@ -38,7 +39,7 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 _STALE_INDEXING_AFTER = timedelta(hours=2)
 
-router = APIRouter(prefix="/repositories", tags=["repositories"])
+router = APIRouter(prefix="/repositories", tags=["repositories"], dependencies=[Depends(ensure_workspace)])
 
 
 # =========================================================================

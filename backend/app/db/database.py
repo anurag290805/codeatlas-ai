@@ -16,9 +16,10 @@ managed PostgreSQL database instead of the ephemeral application disk.
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, text, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from fastapi import Request
 
 from app.config import get_settings
 from app.utils.logger import get_logger
@@ -114,7 +115,7 @@ def db_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db(request: Request) -> Generator[Session, None, None]:
     """Yield a database session for use as a FastAPI dependency.
 
     Intended for use with FastAPI's `Depends`, e.g.:
@@ -127,6 +128,8 @@ def get_db() -> Generator[Session, None, None]:
         An active SQLAlchemy `Session` bound to the application engine.
     """
     with db_session() as session:
+        if request is not None and getattr(request.state, "workspace_id", None):
+            session.info["workspace_id"] = request.state.workspace_id
         yield session
 
 
@@ -155,6 +158,16 @@ def initialize_database() -> None:
 
         logger.info("Ensuring database schema exists without modifying existing data.")
         Base.metadata.create_all(bind=engine)
+
+        # ``create_all`` is intentionally non-destructive but does not add
+        # columns to an existing deployment. Add the ownership column
+        # separately; NULL rows are quarantined legacy data and are never
+        # returned by a workspace-scoped request.
+        inspector = inspect(engine)
+        repository_columns = {column["name"] for column in inspector.get_columns("repositories")}
+        if "workspace_id" not in repository_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE repositories ADD COLUMN workspace_id VARCHAR(32)"))
 
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))

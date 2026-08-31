@@ -42,7 +42,7 @@ class Repository(Base):
 
     __tablename__ = "repositories"
     __table_args__ = (
-        UniqueConstraint("repository_url", name="uq_repositories_repository_url"),
+        UniqueConstraint("workspace_id", "repository_url", name="uq_repositories_workspace_url"),
         Index("ix_repositories_repository_name", "repository_name"),
         Index("ix_repositories_created_at", "created_at"),
     )
@@ -55,9 +55,8 @@ class Repository(Base):
     local_path: Mapped[str] = mapped_column(String(2048), nullable=False)
     current_commit_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # Reserved for future multi-user support; unused until authentication
-    # is introduced, but present now to avoid a breaking schema change.
-    owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Nullable only for quarantined legacy rows. New rows always set it.
+    workspace_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("workspaces.id"), nullable=True, index=True)
     is_private: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     indexing_status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
@@ -82,6 +81,7 @@ class Repository(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    workspace: Mapped["Workspace | None"] = relationship(back_populates="repositories")
     query_history: Mapped[list["QueryHistory"]] = relationship(
         back_populates="repository",
         cascade="all, delete-orphan",
@@ -164,6 +164,14 @@ class IndexedFile(Base):
 
     def __repr__(self) -> str:
         return f"<IndexedFile id={self.id} path={self.relative_path!r} repository_id={self.repository_id}>"
+
+
+class Workspace(Base):
+    """Opaque browser workspace; future accounts can own or join this entity."""
+    __tablename__ = "workspaces"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    repositories: Mapped[list[Repository]] = relationship(back_populates="workspace")
 
 
 class QueryHistory(Base):

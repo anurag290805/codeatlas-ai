@@ -46,12 +46,13 @@ from app.core.retriever import (
 )
 from app.db import crud
 from app.db.database import get_db
+from app.core.workspace import ensure_workspace
 from app.models import schemas
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["query"])
+router = APIRouter(tags=["query"], dependencies=[Depends(ensure_workspace)])
 
 
 # =========================================================================

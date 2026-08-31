@@ -17,9 +17,13 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.db_models import IndexedFile, QueryHistory, Repository
+from app.core.workspace import current_workspace_id
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+def _workspace_for(session: Session) -> str | None:
+    return current_workspace_id() or session.info.get("workspace_id")
 
 
 def _utcnow() -> datetime:
@@ -41,6 +45,7 @@ def create_repository(
     local_path: str = "",
     current_commit_hash: str | None = None,
     obj_in: object | None = None,
+    workspace_id: str | None = None,
 ) -> Repository:
     """Create and persist a new `Repository` record.
 
@@ -73,6 +78,7 @@ def create_repository(
         default_branch=default_branch,
         local_path=local_path,
         current_commit_hash=current_commit_hash,
+        workspace_id=workspace_id or _workspace_for(session),
     )
     session.add(repository)
     try:
@@ -101,7 +107,10 @@ def get_repository_by_id(session: Session, repository_id: int) -> Repository | N
     Returns:
         The matching `Repository`, or None if not found.
     """
-    return session.get(Repository, repository_id)
+    statement = select(Repository).where(Repository.id == repository_id)
+    if (workspace_id := _workspace_for(session)) is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
+    return session.execute(statement).scalar_one_or_none()
 
 
 def get_repository(session: Session, repository_id: int | str) -> Repository | None:
@@ -123,6 +132,8 @@ def get_repository_by_url(session: Session, repository_url: str) -> Repository |
         The matching `Repository`, or None if not found.
     """
     statement = select(Repository).where(Repository.repository_url == repository_url)
+    if (workspace_id := _workspace_for(session)) is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
     return session.execute(statement).scalar_one_or_none()
 
 
@@ -142,6 +153,8 @@ def get_repository_by_name(session: Session, repository_name: str) -> Repository
         .where(Repository.repository_name == repository_name)
         .order_by(Repository.created_at.desc())
     )
+    if (workspace_id := _workspace_for(session)) is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
     return session.execute(statement).scalars().first()
 
 
@@ -166,6 +179,8 @@ def list_repositories(
         .limit(limit)
         .offset(offset)
     )
+    if (workspace_id := _workspace_for(session)) is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
     return session.execute(statement).scalars().all()
 
 
@@ -188,7 +203,7 @@ def update_repository(
     Raises:
         SQLAlchemyError: If the update fails.
     """
-    repository = session.get(Repository, repository_id)
+    repository = get_repository_by_id(session, repository_id)
     if repository is None:
         logger.warning("Attempted to update nonexistent repository id=%s", repository_id)
         return None
@@ -240,7 +255,7 @@ def update_repository_indexing_status(
     Raises:
         SQLAlchemyError: If the update fails.
     """
-    repository = session.get(Repository, repository_id)
+    repository = get_repository_by_id(session, repository_id)
     if repository is None:
         logger.warning(
             "Attempted to update indexing status for nonexistent repository id=%s",
@@ -292,7 +307,7 @@ def delete_repository(session: Session, repository_id: int) -> bool:
     Raises:
         SQLAlchemyError: If the deletion fails.
     """
-    repository = session.get(Repository, repository_id)
+    repository = get_repository_by_id(session, repository_id)
     if repository is None:
         logger.warning("Attempted to delete nonexistent repository id=%s", repository_id)
         return False
@@ -647,14 +662,17 @@ def delete_query_history(session: Session, query_id: int) -> bool:
 
 def count_repositories(session: Session) -> int:
     """Return the total number of registered repositories."""
-    return int(session.scalar(select(func.count()).select_from(Repository)) or 0)
+    statement = select(func.count()).select_from(Repository)
+    if (workspace_id := _workspace_for(session)) is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
+    return int(session.scalar(statement) or 0)
 
 
 def count_repositories_by_status(session: Session, *, status: str) -> int:
     """Count repositories in one indexing status."""
     return int(
         session.scalar(
-            select(func.count()).select_from(Repository).where(Repository.indexing_status == status)
+            select(func.count()).select_from(Repository).where(Repository.indexing_status == status, *(([Repository.workspace_id == workspace_id]) if (workspace_id := _workspace_for(session)) is not None else []))
         )
         or 0
     )

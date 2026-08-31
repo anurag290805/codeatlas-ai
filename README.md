@@ -444,7 +444,18 @@ The UI supports System, Light, Dark, and a branded Colorful theme. The selection
 
 ## Environment variables
 
-Backend deployment requires `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_MAX_TOKENS`, `GEMINI_TEMPERATURE`, `CORS_ALLOWED_ORIGINS`, and the existing `DATABASE_URL`. Public GitHub, OSV, npm, and PyPI APIs do not require keys.
+Backend deployment requires `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_MAX_TOKENS`, `GEMINI_TEMPERATURE`, `CORS_ALLOWED_ORIGINS`, `WORKSPACE_SESSION_SECRET`, and the existing `DATABASE_URL`. Public GitHub, OSV, npm, and PyPI APIs do not require keys.
+
+## Workspace isolation
+
+Before account login exists, each browser receives an opaque, signed,
+HttpOnly workspace cookie. Repository ownership is derived server-side from
+that workspace; the frontend cannot choose an owner. Chroma collections use
+an HMAC-independent SHA-256 namespace derived from the workspace ID plus the
+repository ID. Existing repositories with no `workspace_id` are quarantined
+and are not visible to normal requests. To migrate one safely, explicitly
+assign it to the intended workspace in a controlled database migration after
+identifying that workspace; never backfill all legacy rows to one workspace.
 
 The frontend uses `VITE_API_BASE_URL` and `VITE_API_PREFIX`. Never place `GEMINI_API_KEY` in frontend or Vercel environment variables.
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db import crud
 from app.db.database import get_db
+from app.core.workspace import ensure_workspace
 from app.integrations.dependencies import Dependency, extract_dependencies
 from app.integrations.github import GithubClient
 from app.integrations.npm import NpmClient
@@ -17,7 +18,7 @@ from app.integrations.osv import OsvClient
 from app.integrations.pypi import PypiClient
 from app.models import schemas
 
-router = APIRouter(prefix="/repositories", tags=["intelligence"])
+router = APIRouter(prefix="/repositories", tags=["intelligence"], dependencies=[Depends(ensure_workspace)])
 
 
 def _repository(repository_id: int, db: Session):

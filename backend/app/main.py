@@ -15,7 +15,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -29,8 +29,9 @@ from app.api.routes_query import router as query_router
 from app.api.routes_repo import router as repo_router
 from app.api.routes_intelligence import router as intelligence_router
 from app.config import get_settings
-from app.db.database import close_db, init_db
+from app.db.database import close_db, init_db, get_db
 from app.utils.logger import get_logger
+from app.core.workspace import ensure_workspace, initialize_request_workspace, set_workspace_cookie, _workspace_context
 
 logger = get_logger(__name__)
 
@@ -123,9 +124,21 @@ async def _request_context_middleware(request: Request, call_next):
     """
     correlation_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
     request.state.correlation_id = correlation_id
+    workspace_id = None
+    new_workspace = False
+    workspace_token = None
+    if request.url.path.startswith("/api/"):
+        workspace_id, new_workspace = initialize_request_workspace(request)
+        workspace_token = _workspace_context.set(workspace_id)
     start_time = time.monotonic()
+    try:
+        response = await call_next(request)
+    finally:
+        if workspace_token is not None:
+            _workspace_context.reset(workspace_token)
 
-    response = await call_next(request)
+    if new_workspace and workspace_id is not None:
+        set_workspace_cookie(response, workspace_id)
 
     duration_ms = (time.monotonic() - start_time) * 1000
     response.headers["X-Request-ID"] = correlation_id
@@ -239,6 +252,10 @@ def _register_health_endpoints(app: FastAPI) -> None:
         """Return the running application version and environment."""
         settings = get_settings()
         return {"version": API_VERSION, "environment": settings.environment}
+
+    @app.get("/api/session", tags=["system"], summary="Initialize browser workspace")
+    async def session(_workspace: str = Depends(ensure_workspace)) -> dict[str, str]:
+        return {"workspace": "browser", "status": "active"}
 
 
 # =========================================================================

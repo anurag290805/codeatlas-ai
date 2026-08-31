@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     )
     cors_allow_credentials: bool = True
     trusted_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    workspace_session_secret: str | None = Field(default=None, min_length=32, validation_alias=AliasChoices("WORKSPACE_SESSION_SECRET"))
 
     # Database
     database_url: str = Field(

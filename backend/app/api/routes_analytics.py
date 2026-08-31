@@ -17,11 +17,12 @@ from app.core.graph_builder import GraphNotFoundError, NodeType, get_graph_servi
 from app.core.vector_store import CollectionNotFoundError, VectorStoreService
 from app.db import crud
 from app.db.database import get_db
+from app.core.workspace import ensure_workspace
 from app.models.db_models import Repository
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/analytics", tags=["analytics"])
+router = APIRouter(prefix="/analytics", tags=["analytics"], dependencies=[Depends(ensure_workspace)])
 
 
 @lru_cache(maxsize=1)
