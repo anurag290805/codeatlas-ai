@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 import uuid
+from collections.abc import Callable
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from app.core.workspace import ensure_workspace
@@ -39,6 +40,52 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 _STALE_INDEXING_AFTER = timedelta(hours=2)
+
+_STAGE_BOUNDS: dict[str, tuple[int, int]] = {
+    "queued": (0, 0), "cloning": (0, 10), "discovering": (10, 20),
+    "chunking": (20, 35), "embedding": (35, 75), "storing": (75, 95),
+    "completed": (100, 100), "failed": (0, 100),
+}
+
+
+def _progress_updater(db: Session, repository_id: str) -> Callable[[str, int, int], None]:
+    """Create a persistence-backed progress callback for pipeline stages."""
+    def update(stage: str, processed: int, total: int) -> None:
+        start, end = _STAGE_BOUNDS.get(stage, (0, 0))
+        ratio = min(1.0, max(0.0, processed / total)) if total > 0 else 0.0
+        progress = max(start, min(end, round(start + ratio * (end - start))))
+        current = crud.get_repository(db, repository_id)
+        if current is not None:
+            progress = max(int(current.progress_percent or 0), progress)
+        eta = None
+        if current is not None and progress > 0 and current.last_index_attempt_at:
+            started = current.last_index_attempt_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            elapsed = max(0, (datetime.now(timezone.utc) - started).total_seconds())
+            eta = max(0, round(elapsed * (100 - progress) / progress))
+        crud.update_repository_status(
+            db, repository_id, schemas.RepositoryStatus.INDEXING,
+            stage=stage, progress_percent=progress,
+            processed_files=processed if stage in {"discovering", "chunking"} else None,
+            total_files=total if stage in {"discovering", "chunking"} else None,
+            processed_chunks=processed if stage == "embedding" else None,
+            total_chunks=total if stage == "embedding" else None,
+            processed_embeddings=processed if stage == "storing" else None,
+            total_embeddings=total if stage == "storing" else None,
+            estimated_seconds_remaining=eta,
+        )
+    return update
+
+
+def _set_stage(db: Session, repository_id: str, stage: str, status: str | None = None) -> None:
+    start, _ = _STAGE_BOUNDS[stage]
+    current = crud.get_repository(db, repository_id)
+    progress = max(start, int(current.progress_percent or 0)) if current else start
+    crud.update_repository_status(
+        db, repository_id, status or schemas.RepositoryStatus.INDEXING,
+        stage=stage, progress_percent=progress,
+    )
 
 router = APIRouter(prefix="/repositories", tags=["repositories"], dependencies=[Depends(ensure_workspace)])
 
@@ -111,11 +158,9 @@ def _run_indexing_pipeline(
     staged_clone: Path | None = None
     try:
         repository_numeric_id = int(repository_id)
-        crud.update_repository_status(
-            db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
-        )
+        _set_stage(db, repository_id, "queued")
         identity = git_manager.validate_repository_url(clone_url)
-        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.CLONING)
+        _set_stage(db, repository_id, "cloning")
         if is_update:
             logger.info("Indexing stage started repository_id=%s stage=update", repository_id)
             metadata = git_manager.update_repository(clone_url)
@@ -128,20 +173,23 @@ def _run_indexing_pipeline(
             local_path = Path(metadata.local_path)
         logger.info("Indexing stage finished repository_id=%s stage=clone", repository_id)
 
-        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.DISCOVERING_FILES)
+        progress = _progress_updater(db, repository_id)
+        _set_stage(db, repository_id, "discovering")
         logger.info("Indexing stage started repository_id=%s stage=discovering_files", repository_id)
-        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.CHUNKING)
-        logger.info("Indexing stage started repository_id=%s stage=chunking", repository_id)
-        parse_result = parser.parse_repository(repository_numeric_id, local_path)
+        parse_result = parser.parse_repository(repository_numeric_id, local_path, progress_callback=progress)
+        progress("chunking", len(parse_result.files), len(parse_result.files))
 
         logger.info("Indexing stage started repository_id=%s stage=graph", repository_id)
         graph_service = get_graph_service()
         graph = graph_service.build_staged_graph(parse_result)
 
-        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.EMBEDDING)
+        _set_stage(db, repository_id, "embedding")
         logger.info("Indexing stage started repository_id=%s stage=embedding", repository_id)
         chunks = parse_result.chunks
-        embeddings = embedding_service.generate_embeddings(chunks, repository_id=repository_id)
+        embeddings = embedding_service.generate_embeddings(
+            chunks, repository_id=repository_id,
+            progress_callback=lambda done, total: progress("embedding", done, total),
+        )
         embedding_items = list(getattr(embeddings, "embeddings", embeddings) or [])
         logger.info(
             "Embedding generation completed repository_id=%s chunks=%d embeddings=%d",
@@ -150,10 +198,11 @@ def _run_indexing_pipeline(
             len(embedding_items),
         )
 
-        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.STORING)
+        _set_stage(db, repository_id, "storing")
         logger.info("Indexing stage started repository_id=%s stage=storing", repository_id)
         staged_collection = vector_store_service.stage_embeddings(
-            repository_id, list(getattr(embeddings, "embeddings", embeddings) or [])
+            repository_id, list(getattr(embeddings, "embeddings", embeddings) or []),
+            progress_callback=lambda done, total: progress("storing", done, total),
         )
 
         logger.info("Indexing stage started repository_id=%s stage=commit", repository_id)
@@ -172,8 +221,10 @@ def _run_indexing_pipeline(
         crud.replace_indexed_files(db, repository_id=repository_id, parsed_files=parse_result.files)
         crud.update_repository_status(
             db, repository_id=repository_id, status=schemas.RepositoryStatus.READY,
+            stage="completed", progress_percent=100,
             total_files=len(parse_result.files), total_chunks=len(chunks),
-            total_embeddings=len(embedding_items),
+            total_embeddings=len(embedding_items), processed_files=len(parse_result.files),
+            processed_chunks=len(chunks), processed_embeddings=len(embedding_items),
         )
         graph_stats = graph.statistics()
         logger.info(
@@ -228,7 +279,8 @@ def _mark_indexing_failed(
         db,
         repository_id=repository_id,
         status=failure_status,
-        error_message=f"Indexing failed at stage '{stage}': {exc}",
+        stage="failed", progress_percent=getattr(previous, "progress_percent", 0) if previous else 0,
+        error_message="Indexing failed. Retry the repository to try again.",
     )
 
 
@@ -279,6 +331,8 @@ def import_repository(
             db,
             repository_id=existing.id,
             status=schemas.RepositoryStatus.PENDING,
+            stage="queued", progress_percent=0, processed_files=0,
+            processed_chunks=0, processed_embeddings=0,
             total_files=existing.files_indexed,
             total_chunks=existing.chunks_generated,
             total_embeddings=existing.embeddings_generated,
@@ -393,7 +447,9 @@ def reindex_repository(
     """Schedule a full re-index of an already registered repository."""
     repository = _get_repository_or_404(db, repository_id)
     crud.update_repository_status(
-        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
+        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING,
+        stage="queued", progress_percent=0, processed_files=0,
+        processed_chunks=0, processed_embeddings=0, estimated_seconds_remaining=None,
     )
     logger.info("Repository reindex requested repository_id=%s", repository_id)
 
@@ -434,7 +490,9 @@ def update_repository(
     """Schedule a git pull followed by a full re-index of the repository."""
     repository = _get_repository_or_404(db, repository_id)
     crud.update_repository_status(
-        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
+        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING,
+        stage="queued", progress_percent=0, processed_files=0,
+        processed_chunks=0, processed_embeddings=0, estimated_seconds_remaining=None,
     )
     logger.info("Repository update requested repository_id=%s", repository_id)
 

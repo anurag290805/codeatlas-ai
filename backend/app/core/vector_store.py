@@ -516,8 +516,12 @@ class VectorStoreService:
         workspace = workspace_id or current_workspace_id()
         if workspace is None:
             return f"{_COLLECTION_NAME_PREFIX}_{repository_id}"
-        namespace = hashlib.sha256(workspace.encode()).hexdigest()[:24]
-        return f"{_COLLECTION_NAME_PREFIX}_{namespace}_{repository_id}"
+        # Chroma limits collection names to 63 characters. Keep the
+        # workspace and repository components opaque and compact so the
+        # 32-character staged generation suffix remains valid too.
+        workspace_namespace = hashlib.sha256(workspace.encode()).hexdigest()[:10]
+        repository_namespace = hashlib.sha256(str(repository_id).encode()).hexdigest()[:8]
+        return f"ca_{workspace_namespace}_{repository_namespace}"
 
     def _active_collection_name(self, repository_id: str) -> str:
         """Resolve the durable collection pointer, with legacy-name fallback."""
@@ -534,12 +538,19 @@ class VectorStoreService:
             pass
         return self._collection_name_for(repository_id)
 
-    def stage_embeddings(self, repository_id: str, embeddings: list[ChunkEmbedding]) -> str:
+    def stage_embeddings(
+        self,
+        repository_id: str,
+        embeddings: list[ChunkEmbedding],
+        progress_callback: Any | None = None,
+    ) -> str:
         """Write a complete new generation without touching the active index."""
         collection_name = f"{self._collection_name_for(repository_id)}_{uuid.uuid4().hex}"
         self._store.create_collection(collection_name)
         try:
             self._store.upsert_vectors(collection_name, embeddings)
+            if progress_callback:
+                progress_callback(len(embeddings), len(embeddings))
         except Exception:
             try:
                 self._store.delete_collection(collection_name)

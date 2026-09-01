@@ -273,6 +273,7 @@ class EmbeddingService:
         self,
         chunks: list[Any],
         repository_id: str | None = None,
+        progress_callback: Any | None = None,
     ) -> EmbeddingBatchResult:
         """Embed repository chunks while preserving chunk metadata."""
         if not chunks:
@@ -295,6 +296,8 @@ class EmbeddingService:
             return EmbeddingBatchResult([], skipped)
 
         vectors = self.embed_batch([text for _, text in valid])
+        if progress_callback:
+            progress_callback(len(valid), len(valid))
         embeddings = [
             self._to_chunk_embedding(chunk, vectors[index], repository_id)
             for index, (chunk, _) in enumerate(valid)

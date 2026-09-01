@@ -237,6 +237,7 @@ def update_repository_indexing_status(
     total_chunks: int | None = None,
     total_embeddings: int | None = None,
     mark_indexed_now: bool = False,
+    **progress: object,
 ) -> Repository | None:
     """Update a repository's indexing status and related statistics.
 
@@ -272,9 +273,18 @@ def update_repository_indexing_status(
         repository.total_chunks = total_chunks
     if total_embeddings is not None:
         repository.total_embeddings = total_embeddings
+    for field_name in (
+        "indexing_stage", "progress_percent", "processed_files", "processed_chunks",
+        "processed_embeddings", "estimated_seconds_remaining", "indexing_completed_at",
+    ):
+        if field_name in progress and progress[field_name] is not None and hasattr(repository, field_name):
+            setattr(repository, field_name, progress[field_name])
     if mark_indexed_now:
         repository.last_indexed_at = _utcnow()
-    repository.last_index_attempt_at = _utcnow()
+        repository.indexing_completed_at = _utcnow()
+    # Keep the beginning of an attempt stable while stage updates continue.
+    if repository.indexing_stage in {"queued", "completed", "failed"} or indexing_status in {"pending", "ready", "failed_import", "index_failed", "failed"}:
+        repository.last_index_attempt_at = _utcnow()
     if hasattr(repository, "last_indexing_error"):
         repository.last_indexing_error = None
     repository.updated_at = _utcnow()
@@ -691,6 +701,13 @@ def update_repository_status(session: Session, repository_id: int | str, status:
         total_chunks=fields.get("total_chunks"),
         total_embeddings=fields.get("total_embeddings"),
         mark_indexed_now=str(getattr(status, "value", status)) == "ready",
+        indexing_stage=fields.get("stage", fields.get("indexing_stage")),
+        progress_percent=fields.get("progress_percent"),
+        processed_files=fields.get("processed_files"),
+        processed_chunks=fields.get("processed_chunks"),
+        processed_embeddings=fields.get("processed_embeddings"),
+        estimated_seconds_remaining=fields.get("estimated_seconds_remaining"),
+        indexing_completed_at=fields.get("completed_at"),
     )
     if repository is not None and "error_message" in fields:
         repository.last_indexing_error = str(fields["error_message"])

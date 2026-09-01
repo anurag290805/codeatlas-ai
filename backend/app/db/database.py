@@ -168,6 +168,21 @@ def initialize_database() -> None:
         if "workspace_id" not in repository_columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE repositories ADD COLUMN workspace_id VARCHAR(32)"))
+        # Additive progress fields for deployments created before indexing
+        # progress was persisted. Defaults make this safe for existing rows.
+        progress_columns = {
+            "indexing_stage": "VARCHAR(50) NOT NULL DEFAULT 'queued'",
+            "progress_percent": "INTEGER NOT NULL DEFAULT 0",
+            "processed_files": "INTEGER NOT NULL DEFAULT 0",
+            "processed_chunks": "INTEGER NOT NULL DEFAULT 0",
+            "processed_embeddings": "INTEGER NOT NULL DEFAULT 0",
+            "estimated_seconds_remaining": "INTEGER",
+            "indexing_completed_at": "TIMESTAMP",
+        }
+        for column_name, definition in progress_columns.items():
+            if column_name not in repository_columns:
+                with engine.begin() as connection:
+                    connection.execute(text(f"ALTER TABLE repositories ADD COLUMN {column_name} {definition}"))
 
         # The original schema enforced repository_url globally. That
         # constraint is incompatible with isolated workspaces: two

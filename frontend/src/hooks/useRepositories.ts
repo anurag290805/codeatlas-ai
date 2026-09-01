@@ -12,6 +12,10 @@ export function useRepositories() {
   return useQuery({
     queryKey: ["repositories"],
     queryFn: () => RepositoryApi.getRepositories().then((response) => response.data),
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      return items.some((item) => !["ready", "indexed", "failed", "index_failed", "failed_import"].includes(item.status)) ? 1500 : false;
+    },
   });
 }
 

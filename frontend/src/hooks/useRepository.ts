@@ -15,6 +15,12 @@ export function useRepository(repositoryId: string | undefined) {
     queryFn: () =>
       RepositoryApi.getRepository(repositoryId as string).then((response) => response.data),
     enabled: Boolean(repositoryId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && !["ready", "indexed", "failed", "index_failed", "failed_import"].includes(status)
+        ? 1500
+        : false;
+    },
   });
 }
 

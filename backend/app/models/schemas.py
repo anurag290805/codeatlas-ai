@@ -34,6 +34,17 @@ class RepositoryStatus(str, Enum):
 IndexingStatus = RepositoryStatus
 
 
+class IndexingStage(str, Enum):
+    QUEUED = "queued"
+    CLONING = "cloning"
+    DISCOVERING = "discovering"
+    CHUNKING = "chunking"
+    EMBEDDING = "embedding"
+    STORING = "storing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class RepositoryCreate(BaseModel):
     """Request to register a public GitHub repository."""
 
@@ -69,11 +80,18 @@ class RepositoryResponse(BaseModel):
     url: str
     default_branch: str = "main"
     status: RepositoryStatus = RepositoryStatus.PENDING
+    stage: IndexingStage = IndexingStage.QUEUED
+    progress_percent: float = Field(default=0, ge=0, le=100)
     files_indexed: int = Field(default=0, ge=0)
     chunks_generated: int = Field(default=0, ge=0)
     embeddings_generated: int = Field(default=0, ge=0)
+    processed_files: int = Field(default=0, ge=0)
+    processed_chunks: int = Field(default=0, ge=0)
+    processed_embeddings: int = Field(default=0, ge=0)
+    estimated_seconds_remaining: int | None = Field(default=None, ge=0)
     last_indexed_at: datetime | None = None
     indexing_started_at: datetime | None = None
+    completed_at: datetime | None = None
     error_message: str | None = None
 
     @field_validator("default_branch", mode="before")

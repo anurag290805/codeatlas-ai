@@ -53,6 +53,11 @@ function processingStatus(status: RepositoryDetailResponse["status"]): Repositor
   }
 }
 
+function stageStatus(stage: RepositoryDetailResponse["stage"]): RepositoryProcessingStatus {
+  if (stage === "cloning" || stage === "embedding" || stage === "chunking" || stage === "discovering" || stage === "storing") return stage === "discovering" ? "discovering_files" : stage;
+  return "pending";
+}
+
 function toRepository(data: RepositoryDetailResponse): Repository {
   const branches = data.branches ?? [];
   const statistics = data.statistics ?? {
@@ -77,7 +82,15 @@ function toRepository(data: RepositoryDetailResponse): Repository {
     isPrivate: data.visibility === "private",
     defaultBranch: data.default_branch,
     branches,
-    status: processingStatus(data.status),
+    status: data.stage && data.status !== "ready" && data.status !== "indexed" && data.status !== "failed" && data.status !== "index_failed" && data.status !== "failed_import"
+      ? stageStatus(data.stage)
+      : processingStatus(data.status),
+    stage: data.stage,
+    progress_percent: data.progress_percent,
+    processed_files: data.processed_files,
+    processed_chunks: data.processed_chunks,
+    processed_embeddings: data.processed_embeddings,
+    estimated_seconds_remaining: data.estimated_seconds_remaining,
     primaryLanguage: data.primary_language ?? undefined,
     sizeBytes: data.metrics?.sizeBytes ?? 0,
     statistics,

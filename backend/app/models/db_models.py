@@ -60,6 +60,11 @@ class Repository(Base):
     is_private: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     indexing_status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
+    indexing_stage: Mapped[str] = mapped_column(String(50), nullable=False, default="queued")
+    progress_percent: Mapped[float] = mapped_column(Integer, nullable=False, default=0)
+    processed_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processed_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processed_embeddings: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     total_files: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -68,6 +73,8 @@ class Repository(Base):
     last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_indexing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_index_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    indexing_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    estimated_seconds_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
@@ -100,6 +107,10 @@ class Repository(Base):
         return self.indexing_status or "pending"
 
     @property
+    def stage(self) -> str:
+        return self.indexing_stage or "queued"
+
+    @property
     def files_indexed(self) -> int:
         return self.total_files or 0
 
@@ -124,6 +135,10 @@ class Repository(Base):
     def indexing_started_at(self) -> datetime | None:
         """Timestamp of the latest indexing attempt."""
         return self.last_index_attempt_at
+
+    @property
+    def completed_at(self) -> datetime | None:
+        return self.indexing_completed_at
 
 
 class IndexedFile(Base):
