@@ -38,7 +38,6 @@ from app.core.llm import (
     LLMTimeoutError,
     ResponseFormat,
 )
-from app.core.auth import get_workspace_id
 from app.core.retriever import (
     RepositoryNotIndexedError,
     RetrievalError,
@@ -47,12 +46,13 @@ from app.core.retriever import (
 )
 from app.db import crud
 from app.db.database import get_db
+from app.core.workspace import ensure_workspace
 from app.models import schemas
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(tags=["query"])
+router = APIRouter(tags=["query"], dependencies=[Depends(ensure_workspace)])
 
 
 # =========================================================================
@@ -91,7 +91,6 @@ async def query_repository(
     db: Session = Depends(get_db),
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
-    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.QueryResponse:
     """Answer a natural-language question about a repository using RAG."""
     return await _answer_query(
@@ -100,7 +99,7 @@ async def query_repository(
         top_k=payload.top_k,
         db=db,
         retriever=retriever,
-        llm_service=llm_service, workspace_id=workspace_id,
+        llm_service=llm_service,
     )
 
 
@@ -120,7 +119,6 @@ async def query_specific_repository(
     db: Session = Depends(get_db),
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
-    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.QueryResponse:
     """Answer a natural-language question scoped to a single repository."""
     return await _answer_query(
@@ -129,7 +127,7 @@ async def query_specific_repository(
         top_k=payload.top_k,
         db=db,
         retriever=retriever,
-        llm_service=llm_service, workspace_id=workspace_id,
+        llm_service=llm_service,
     )
 
 
@@ -147,15 +145,14 @@ async def query_repository_stream(
     db: Session = Depends(get_db),
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
-    workspace_id: str = Depends(get_workspace_id),
 ) -> StreamingResponse:
     """Answer a natural-language question about a repository, streaming the response."""
-    _ensure_repository_ready(db, payload.repository_id, workspace_id)
+    _ensure_repository_ready(db, payload.repository_id)
 
     logger.info("Query received repository_id=%s streaming=true", payload.repository_id)
 
     retrieval_result = await _retrieve(
-        retriever, payload.repository_id, payload.query, payload.top_k, workspace_id
+        retriever, payload.repository_id, payload.query, payload.top_k
     )
 
     logger.info(
@@ -181,28 +178,24 @@ async def query_health(
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> schemas.QueryHealthResponse:
-    """Return backend retrieval readiness and Gemini/model availability."""
-    gemini = await llm_service.check_health()
+    """Return independent RAG and Gemini provider status."""
+    provider = await llm_service.check_health()
     retriever_ready = retriever.is_ready()
+    health_status = "healthy" if retriever_ready and provider.healthy else "degraded"
     if not retriever_ready:
-        health_status = "unhealthy"
-        message = "Repository retrieval is not configured."
-    elif not gemini.reachable:
-        health_status = "degraded"
-        message = gemini.message
-    elif not gemini.model_available:
-        health_status = "degraded"
-        message = gemini.message
+        health_status, message = "unhealthy", "Repository retrieval is not configured."
     else:
-        health_status = "healthy"
-        message = gemini.message
+        message = provider.message
     return schemas.QueryHealthResponse(
         status=health_status,
-        retriever_ready=retriever.is_ready(),
+        retriever_ready=retriever_ready,
+        rag_status="ready" if retriever_ready else "unavailable",
+        provider_status=provider.status,
+        provider_configured=provider.configured,
+        provider_healthy=provider.healthy,
         llm_provider=llm_service.provider_name.value,
         llm_model=llm_service.model_name,
-        provider_reachable=gemini.reachable,
-        model_available=gemini.model_available,
+        model_available=provider.model_available,
         message=message,
     )
 
@@ -220,18 +213,17 @@ async def _answer_query(
     db: Session,
     retriever: RetrieverService,
     llm_service: LLMService,
-    workspace_id: str,
 ) -> schemas.QueryResponse:
     """
     Execute the full non-streaming query pipeline: validate repository
     readiness, retrieve context, generate a grounded answer, and shape
     the response.
     """
-    _ensure_repository_ready(db, repository_id, workspace_id)
+    _ensure_repository_ready(db, repository_id)
 
     logger.info("Query received repository_id=%s streaming=false", repository_id)
 
-    retrieval_result = await _retrieve(retriever, repository_id, query, top_k, workspace_id)
+    retrieval_result = await _retrieve(retriever, repository_id, query, top_k)
 
     logger.info(
         "Retrieval completed repository_id=%s chunks=%d",
@@ -286,7 +278,6 @@ async def _retrieve(
     repository_id: str,
     query: str,
     top_k: Optional[int],
-    workspace_id: str | None = None,
 ):
     """Run retrieval on a worker thread and translate failures into HTTPExceptions."""
     try:
@@ -294,7 +285,6 @@ async def _retrieve(
             text=query,
             repository_id=str(repository_id),
             top_k=top_k,
-            workspace_id=workspace_id,
         )
         return await run_in_threadpool(retriever.retrieve, retrieval_query)
     except RepositoryNotIndexedError as exc:
@@ -337,7 +327,7 @@ async def _generate_answer(llm_service: LLMService, retrieval_result):
             detail=str(exc),
         ) from exc
     except LLMProviderOutageError as exc:
-        logger.error("Gemini is unavailable error=%s", exc)
+        logger.error("Gemini provider is unavailable error=%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
@@ -399,7 +389,7 @@ async def _stream_answer_events(
         yield f"event: error\ndata: {json.dumps(error_payload)}\n\n"
 
 
-def _ensure_repository_ready(db: Session, repository_id: str, workspace_id: str | None = None) -> None:
+def _ensure_repository_ready(db: Session, repository_id: str) -> None:
     """
     Validate that a repository exists and has completed indexing before
     a query is attempted.
@@ -408,7 +398,7 @@ def _ensure_repository_ready(db: Session, repository_id: str, workspace_id: str 
         HTTPException: 404 if the repository does not exist, 409 if it
             exists but has not finished indexing.
     """
-    repository = crud.get_repository(db, repository_id=repository_id, workspace_id=workspace_id)
+    repository = crud.get_repository(db, repository_id=repository_id)
     if repository is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

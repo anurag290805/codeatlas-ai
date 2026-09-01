@@ -7,7 +7,8 @@ FROM python:3.11.11-slim-bookworm AS builder
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    HF_HOME=/opt/huggingface
 
 WORKDIR /build
 
@@ -20,19 +21,24 @@ RUN apt-get update \
 
 COPY requirements.txt ./requirements.txt
 
+# Download the pinned Sentence Transformer during the image build. Runtime
+# indexing must never block on first-use Hugging Face retries.
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements.txt \
+    && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-en-v1.5')" \
     && rm -rf /root/.cache/pip
 
 
 # Runtime stage: contains only the application, its virtual environment, and
-# libraries needed at runtime.
+# libraries needed at runtime. Gemini is accessed server-side via HTTPS.
 FROM python:3.11.11-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    HF_HOME=/opt/huggingface \
+    HF_HUB_OFFLINE=1
 
 WORKDIR /app
 
@@ -47,6 +53,7 @@ RUN apt-get update \
     && chown -R appuser:appuser /app /home/appuser
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/huggingface /opt/huggingface
 
 # Copy application source after dependency installation to preserve cache
 # reuse when only backend code changes.

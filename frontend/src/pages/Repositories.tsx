@@ -16,8 +16,8 @@ function nameOf(repository: RepositoryListItem): string {
 function statusOf(repository: RepositoryListItem): RepositoryStatusValue {
   if (repository.status === "ready" || repository.status === "indexed") return "ready";
   if (repository.status === "failed" || repository.status === "index_failed" || repository.status === "failed_import") return "error";
-  if (repository.status === "embedding") return "embedding";
-  if (repository.status === "cloning") return "cloning";
+  if (repository.stage === "embedding") return "embedding";
+  if (repository.stage === "cloning") return "cloning";
   return "indexing";
 }
 
@@ -57,7 +57,7 @@ export function Repositories() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {repositories.map((repository) => (
-            <RepositoryCard key={repository.id} name={nameOf(repository)} owner={nameOf(repository).split("/")[0] ?? "GitHub"} visibility="public" defaultBranch={repository.default_branch} size={`${repository.files_indexed.toLocaleString()} files`} lastUpdated={repository.last_indexed_at ? new Date(repository.last_indexed_at).toLocaleDateString() : "Not indexed"} status={statusOf(repository)} onOpen={() => navigate(`/repositories/${repository.id}`)} onRefresh={() => void repositoriesQuery.refetch()} />
+            <RepositoryCard key={repository.id} name={nameOf(repository)} owner={nameOf(repository).split("/")[0] ?? "GitHub"} visibility="public" defaultBranch={repository.default_branch} size={`${repository.files_indexed.toLocaleString()} files`} lastUpdated={repository.last_indexed_at ? new Date(repository.last_indexed_at).toLocaleDateString() : "Not indexed"} status={statusOf(repository)} progressPercent={repository.progress_percent} stage={repository.stage} processedFiles={repository.processed_files} totalFiles={repository.files_indexed} processedChunks={repository.processed_chunks} totalChunks={repository.chunks_generated} processedEmbeddings={repository.processed_embeddings} totalEmbeddings={repository.embeddings_generated} onOpen={() => navigate(`/repositories/${repository.id}`)} onRefresh={() => void repositoriesQuery.refetch()} />
           ))}
         </div>
       )}

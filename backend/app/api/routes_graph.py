@@ -35,11 +35,12 @@ from app.core.graph_builder import (
 )
 from app.db import crud
 from app.db.database import get_db
+from app.core.workspace import ensure_workspace
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/repositories/{repository_id}/graph", tags=["graph"])
+router = APIRouter(prefix="/repositories/{repository_id}/graph", tags=["graph"], dependencies=[Depends(ensure_workspace)])
 
 def get_graph_service() -> GraphService:
     """FastAPI dependency returning the shared ``GraphService`` instance."""

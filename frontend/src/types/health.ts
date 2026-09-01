@@ -12,7 +12,10 @@ export interface BackendHealthResponse {
 export interface QueryHealthResponse {
   readonly status: HealthStatus;
   readonly retriever_ready: boolean;
-  readonly provider_reachable: boolean;
+  readonly rag_status: "ready" | "degraded" | "unavailable";
+  readonly provider_status: string;
+  readonly provider_configured: boolean;
+  readonly provider_healthy: boolean;
   readonly model_available: boolean;
   readonly llm_provider: string;
   readonly llm_model: string;

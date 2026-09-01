@@ -17,8 +17,13 @@ export type RepositoryProcessingStatus =
   | "cloning"
   | "parsing"
   | "embedding"
+  | "discovering_files"
+  | "chunking"
+  | "storing"
   | "ready"
   | "failed";
+
+export type IndexingStage = "queued" | "cloning" | "discovering" | "chunking" | "embedding" | "storing" | "completed" | "failed";
 
 /** Owning user or organization for a repository, as reported by the source host. */
 export interface RepositoryOwner {
@@ -139,6 +144,12 @@ export interface Repository {
   readonly defaultBranch: string;
   readonly branches?: readonly RepositoryBranch[];
   readonly status: RepositoryProcessingStatus;
+  readonly stage?: IndexingStage;
+  readonly progress_percent?: number;
+  readonly processed_files?: number;
+  readonly processed_chunks?: number;
+  readonly processed_embeddings?: number;
+  readonly estimated_seconds_remaining?: number | null;
   readonly primaryLanguage?: string;
   readonly sizeBytes: number;
   readonly statistics?: RepositoryStatistics;
@@ -164,6 +175,15 @@ export interface RepositoryDetailResponse extends RepositoryListItem {
   readonly statistics?: RepositoryStatistics;
   readonly metrics?: RepositoryMetrics;
   readonly files?: readonly FileTreeNode[];
+  readonly indexing_started_at?: string | null;
+  readonly error_message?: string | null;
+  readonly stage?: IndexingStage;
+  readonly progress_percent?: number;
+  readonly processed_files?: number;
+  readonly processed_chunks?: number;
+  readonly processed_embeddings?: number;
+  readonly estimated_seconds_remaining?: number | null;
+  readonly completed_at?: string | null;
 }
 
 /** Condensed repository projection used in list and card views (e.g. the dashboard). */
@@ -187,11 +207,17 @@ export interface RepositoryListItem {
   readonly repository_name: string;
   readonly url: string;
   readonly default_branch: string;
-  readonly status: "pending" | "cloning" | "parsing" | "embedding" | "ready" | "indexed" | "indexing" | "index_failed" | "failed_import" | "failed" | "deleting";
+  readonly status: "pending" | "cloning" | "parsing" | "embedding" | "discovering_files" | "chunking" | "storing" | "ready" | "indexed" | "indexing" | "index_failed" | "failed_import" | "failed" | "deleting";
   readonly files_indexed: number;
   readonly chunks_generated: number;
   readonly embeddings_generated: number;
   readonly last_indexed_at: string | null;
+  readonly stage?: IndexingStage;
+  readonly progress_percent?: number;
+  readonly processed_files?: number;
+  readonly processed_chunks?: number;
+  readonly processed_embeddings?: number;
+  readonly estimated_seconds_remaining?: number | null;
 }
 
 /** Paginated repository response returned by the backend. */

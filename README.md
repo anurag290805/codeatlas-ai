@@ -4,14 +4,13 @@
 
 **Ask questions about any GitHub repo in plain English — get grounded answers with file-and-line citations, not hallucinations.**
 
-*A local-first, retrieval-augmented code intelligence platform. No OpenAI key. No API bill. No data leaving your machine.*
+*A retrieval-augmented code intelligence platform with grounded answers and file-level citations.*
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React_19-Frontend-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F00?style=flat-square)](https://www.trychroma.com/)
-[![Gemini](https://img.shields.io/badge/Gemini-API-4285F4?style=flat-square)](https://ai.google.dev/gemini-api)
 [![License](https://img.shields.io/badge/License-See_LICENSE-lightgrey?style=flat-square)](LICENSE)
 
 [Features](#-features) • [Architecture](#-architecture) • [Quick Start](#-local-installation) • [API](#-api-documentation) • [Roadmap](#-roadmap)
@@ -24,7 +23,7 @@
 
 CodeAtlas AI turns a raw GitHub repository into a **queryable knowledge base**. Point it at a repo, and it parses the code into real semantic units — not just text chunks — builds a searchable dependency graph, and answers natural-language questions with **retrieval-augmented generation grounded in file- and line-level citations**.
 
-Everything runs **locally**: parsing, embeddings, vector search, and generation. No proprietary API keys, no per-token billing, no code leaving your infrastructure — which matters if you're analyzing private or sensitive codebases.
+Parsing, embeddings, vector search, and repository indexing run in CodeAtlas; Gemini generation is performed server-side with the configured backend secret.
 
 > **Why it's interesting from an engineering standpoint:** most "chat with your code" tools are thin wrappers around an LLM API and a vector store. CodeAtlas AI instead does real static analysis (Tree-sitter AST parsing → symbol/class/function extraction → dependency graph construction) *before* anything touches an embedding model, so answers are traceable back to actual code structure — not just fuzzy text similarity.
 
@@ -39,7 +38,7 @@ Everything runs **locally**: parsing, embeddings, vector search, and generation.
 | 📍 **File & Line Citations** | No hallucinated references — every claim points to real code |
 | 🕸️ **Dependency Graph Explorer** | Traverse files, symbols, imports, and relationships; query neighbors and shortest paths between nodes |
 | 🌳 **AST-Level Parsing** | Tree-sitter extracts classes, functions, methods, interfaces, enums, and arrow functions from Python, JavaScript, and TypeScript |
-| ☁️ **Grounded Gemini Answers** | Gemini generates repository-aware answers server-side with citations |
+| 🤖 **Gemini Grounded Inference** | Server-side Gemini generation constrained by retrieved repository context |
 | ⚡ **Streaming Responses** | `/query/stream` for real-time, token-by-token answers |
 | 🐳 **One-Command Docker Deploy** | Full stack (backend, SQLite, ChromaDB, repo storage) via Docker Compose |
 | 🧩 **Clean Layered Architecture** | Strict separation between HTTP, orchestration, domain logic, and persistence |
@@ -79,8 +78,8 @@ CodeAtlas AI follows a strict **ingest → understand → retrieve → generate*
     rerank → assemble context)
         │
         ▼
-       Gemini API
-  (local generation)
+       Gemini
+  (server-side generation)
         │
         ▼
  Grounded Answer + Citations
@@ -123,7 +122,7 @@ to do both jobs.
 | **Code Parsing** | Tree-sitter (multi-language AST parsing) |
 | **Embeddings** | Sentence Transformers (`BAAI/bge-small-en-v1.5`, local) |
 | **Vector Store** | ChromaDB |
-| **LLM Inference** | Gemini (`gemini-2.5-flash`, server-side) |
+| **LLM Inference** | Gemini Interactions API (`gemini-2.5-flash`, configurable) |
 | **Metadata Store** | SQLite locally / PostgreSQL on Render |
 | **Frontend** | React 19 + TypeScript + Vite |
 | **Frontend Data/State** | TanStack Query |
@@ -141,8 +140,8 @@ to do both jobs.
 - Python 3.11
 - Git
 - Docker & Docker Compose *(optional)*
-- A Gemini API key
-- 8 GB+ RAM recommended for local embedding and LLM workloads
+- Gemini API key configured on the backend
+- 8 GB+ RAM recommended for local embedding workloads
 
 ---
 
@@ -164,7 +163,7 @@ py -3.11 -m venv backend\.venv
 backend\.venv\Scripts\Activate.ps1
 ```
 
-Gemini is used server-side for AI query generation. Configure the API key in the backend environment; never expose it in frontend variables.
+Gemini is used for AI query generation. Copy `backend/.env.example` and set `GEMINI_API_KEY` in the backend environment.
 
 ---
 
@@ -179,8 +178,9 @@ cp backend/.env.example backend/.env
 | `APP_NAME` | `CodeAtlas AI` | Application name |
 | `DEBUG` | `True` | Development diagnostics — set `False` in production |
 | `DATABASE_URL` | `sqlite:///./codeatlas.db` locally | SQLAlchemy database URL. Set this to the Render PostgreSQL connection string in production; `postgres://` is normalized automatically to `postgresql://`. |
-| `GEMINI_API_KEY` | — | Server-side Gemini API key |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Generation model |
+| `GEMINI_API_KEY` | unset | Backend/Render secret used for server-side Gemini requests; never expose it to Vite |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Configurable Gemini model for repository Q&A |
+| `GEMINI_TIMEOUT_SECONDS` | `60` | Gemini request timeout |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Local embedding model |
 | `CHROMA_DB_PATH` | `./data/chroma` | ChromaDB persistence path |
 | `LOG_LEVEL` | `INFO` | Application log level |
@@ -207,7 +207,19 @@ source .venv/bin/activate
 DEBUG=true python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API available at `http://localhost:8000`. Health/version checks and startup degrade gracefully when Gemini credentials are missing. All feature routers live under the `/api` prefix.
+API available at `http://localhost:8000`. `GET /api/query/health` reports RAG and Gemini readiness. All feature routers live under the `/api` prefix.
+
+For Render, set `GEMINI_API_KEY`, `GEMINI_MODEL`, and a production `CORS_ALLOWED_ORIGINS` containing the deployed frontend origin. Keep all Gemini variables on the backend service only. Sentence Transformer embeddings and Chroma collections are unchanged, so no re-indexing is required.
+
+### Optional external API evaluation
+
+The public-apis catalog was evaluated for developer-facing value. No new external API was added in this pass: repository Q&A and indexing have no dependency on third-party metadata services, and introducing unauthenticated/rate-limited calls would add failure modes without a corresponding UI contract. The highest-value future candidates are GitHub repository metadata and OSV vulnerability metadata, both behind explicit, cached feature services rather than the query path.
+
+| API / Service | CodeAtlas feature | Value | Auth required | Rate limits | Integrated? |
+|---|---|---|---|---|---|
+| GitHub REST API | repository activity, releases, contributors | High for repository overview | Public data usually no; tokens improve limits/private access | Yes | No |
+| OSV API | dependency vulnerability intelligence | High for risk analysis | No API key for basic use | Service limits apply | No |
+| npm/PyPI registries | latest dependency metadata | Medium; useful after manifest extraction | Usually no for public packages | Yes | No |
 
 ---
 
@@ -299,7 +311,7 @@ sequenceDiagram
     participant ST as Sentence Transformers
     participant DB as ChromaDB
     participant G as Graph Builder
-    participant G as Gemini
+    participant Gm as Gemini
 
     U->>API: Submit GitHub repo URL
     API->>API: Validate & clone repository
@@ -313,8 +325,8 @@ sequenceDiagram
     U->>API: Ask a question
     API->>DB: Embed → search → filter → dedupe → rerank
     DB-->>API: Assembled context
-    API->>O: Generate grounded answer
-    O-->>API: Answer
+    API->>Gm: Generate grounded answer
+    Gm-->>API: Answer
     API-->>U: Answer + file/line citations
 ```
 
@@ -364,13 +376,13 @@ npm run preview
 
 Deploy `frontend/dist` to any static host. For Vercel/Netlify: project root `frontend`, build command `npm run build`, publish directory `dist`. Set `VITE_API_BASE_URL` / `VITE_API_PREFIX` in the host's environment settings, and make sure the backend's CORS config allows the deployed frontend origin.
 
-For a full-stack deploy, run `docker compose up --build` from the repository root — the backend owns Gemini access, SQLite, ChromaDB, and indexing, while the frontend deploys independently.
+For a full-stack deploy, run `docker compose up --build` from the repository root — the backend owns SQLite, ChromaDB, indexing, and server-side Gemini access, while the frontend deploys independently.
 
 ---
 
 ## 🎯 Design Principles
 
-- **Local-first AI** — no required paid provider, no vendor lock-in
+- **Server-side Gemini** — one explicit, configurable AI provider
 - **Strict layering** — HTTP, orchestration, domain, and persistence never bleed into each other
 - **Deterministic citations** — every answer is traceable, never hand-waved
 - **Typed contracts** — explicit validation end-to-end
@@ -411,3 +423,42 @@ Distributed under the license included in [`LICENSE`](LICENSE).
 **Built for developers who want to understand a codebase, not just search it.**
 
 </div>
+# CodeAtlas AI
+
+CodeAtlas is a Gemini-only code intelligence workspace. It ingests public GitHub repositories, parses and chunks source code, creates Sentence Transformer embeddings, stores them in ChromaDB, and answers grounded questions with file citations.
+
+## Developer intelligence
+
+Indexed repositories expose optional, feature-isolated intelligence endpoints and views for:
+
+- GitHub public metadata (stars, forks, watchers, issues, branch, license)
+- npm and PyPI package metadata from supported repository manifests
+- OSV vulnerability matching for pinned dependency versions
+- normalized dependency and security results with refreshable frontend queries
+
+Supported manifests are `package.json`, `package-lock.json`, `requirements.txt`, and `pyproject.toml`. External provider failures do not stop repository ingestion or RAG.
+
+## Appearance
+
+The UI supports System, Light, Dark, and a branded Colorful theme. The selection is persisted by `next-themes` and applies without a reload.
+
+## Environment variables
+
+Backend deployment requires `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECONDS`, `GEMINI_MAX_TOKENS`, `GEMINI_TEMPERATURE`, `CORS_ALLOWED_ORIGINS`, `WORKSPACE_SESSION_SECRET`, and the existing `DATABASE_URL`. Public GitHub, OSV, npm, and PyPI APIs do not require keys.
+
+## Workspace isolation
+
+Before account login exists, each browser receives an opaque, signed,
+HttpOnly workspace cookie. Repository ownership is derived server-side from
+that workspace; the frontend cannot choose an owner. Chroma collections use
+an HMAC-independent SHA-256 namespace derived from the workspace ID plus the
+repository ID. Existing repositories with no `workspace_id` are quarantined
+and are not visible to normal requests. To migrate one safely, explicitly
+assign it to the intended workspace in a controlled database migration after
+identifying that workspace; never backfill all legacy rows to one workspace.
+
+The frontend uses `VITE_API_BASE_URL` and `VITE_API_PREFIX`. Never place `GEMINI_API_KEY` in frontend or Vercel environment variables.
+
+## Local checks
+
+Run the backend test suite with `pytest -q` from `backend/`, and the frontend checks with `npm run lint` and `npm run build` from `frontend/`.

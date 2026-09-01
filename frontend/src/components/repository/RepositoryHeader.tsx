@@ -33,6 +33,7 @@ interface RepositoryHeaderProps {
   repository: Repository;
   onRefresh: () => void;
   onDelete?: () => void;
+  onRetry?: () => void;
   isRefreshing?: boolean;
   isDeleting?: boolean;
   className?: string;
@@ -61,6 +62,24 @@ const STATUS_CONFIG: Record<RepositoryProcessingStatus, StatusConfig> = {
     label: "Parsing",
     icon: Loader2,
     badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
+    spin: true,
+  },
+  discovering_files: {
+    label: "Discovering files",
+    icon: Loader2,
+    badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
+    spin: true,
+  },
+  chunking: {
+    label: "Chunking",
+    icon: Loader2,
+    badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
+    spin: true,
+  },
+  storing: {
+    label: "Storing vectors",
+    icon: Loader2,
+    badgeClassName: "bg-violet-500/10 text-violet-500 border-transparent",
     spin: true,
   },
   embedding: {
@@ -115,10 +134,27 @@ function formatRelativeTime(isoDate?: string): string {
   return formatter.format(diffSeconds, "second");
 }
 
+function formatEta(seconds?: number | null): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "Calculating time remaining…";
+  if (seconds < 60) return `About ${Math.max(1, seconds)}s remaining`;
+  return `About ${Math.ceil(seconds / 60)}m remaining`;
+}
+
+function progressLabel(repository: Repository): string {
+  if (repository.status === "ready") return "Indexing complete";
+  if (repository.status === "failed") return "Indexing failed. Retry to try again.";
+  const labels: Record<string, string> = {
+    queued: "Waiting to start…", cloning: "Cloning repository…", discovering: "Discovering files…",
+    chunking: "Building code chunks…", embedding: "Generating embeddings…", storing: "Storing vectors…",
+  };
+  return labels[repository.stage ?? "queued"] ?? "Preparing index…";
+}
+
 export function RepositoryHeader({
   repository,
   onRefresh,
   onDelete,
+  onRetry,
   isRefreshing = false,
   isDeleting = false,
   className,
@@ -187,6 +223,24 @@ export function RepositoryHeader({
               <Clock className="h-3 w-3" />
               Last indexed {formatRelativeTime(repository.lastIndexedAt ?? repository.updatedAt)}
             </p>
+
+            {repository.status !== "ready" && (
+              <div className="w-full max-w-xl space-y-2 pt-1" aria-live="polite">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="font-medium text-foreground">{progressLabel(repository)}</span>
+                  <span className="tabular-nums text-muted-foreground">{Math.round(Math.min(100, Math.max(0, repository.progress_percent ?? 0)))}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={repository.progress_percent ?? 0}>
+                  <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${Math.min(100, Math.max(0, repository.progress_percent ?? 0))}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  {repository.processed_files != null && <span>{repository.processed_files}/{repository.statistics?.fileCount ?? 0} files</span>}
+                  {repository.processed_chunks != null && <span>{repository.processed_chunks}/{repository.statistics?.chunkCount ?? 0} chunks</span>}
+                  {repository.processed_embeddings != null && <span>{repository.processed_embeddings}/{repository.statistics?.embeddingCount ?? 0} vectors</span>}
+                  <span>{repository.status === "failed" ? "" : formatEta(repository.estimated_seconds_remaining)}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
@@ -231,6 +285,19 @@ export function RepositoryHeader({
                     Open on GitHub
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                {onRetry && repository.status === "failed" && (
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setMenuOpen(false);
+                      onRetry();
+                    }}
+                    className="flex cursor-pointer items-center gap-2"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Retry indexing
+                  </DropdownMenuItem>
+                )}
                 {onDelete && (
                   <DropdownMenuItem
                     disabled={isDeleting}

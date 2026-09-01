@@ -37,6 +37,14 @@ interface RepositoryCardProps {
   onRefresh?: () => void;
   onDelete?: () => void;
   className?: string;
+  progressPercent?: number;
+  stage?: string;
+  processedFiles?: number;
+  totalFiles?: number;
+  processedChunks?: number;
+  totalChunks?: number;
+  processedEmbeddings?: number;
+  totalEmbeddings?: number;
 }
 
 /**
@@ -59,6 +67,14 @@ export function RepositoryCard({
   onRefresh,
   onDelete,
   className,
+  progressPercent = 0,
+  stage,
+  processedFiles,
+  totalFiles,
+  processedChunks,
+  totalChunks,
+  processedEmbeddings,
+  totalEmbeddings,
 }: RepositoryCardProps) {
   if (isLoading) {
     return (
@@ -139,6 +155,17 @@ export function RepositoryCard({
               {defaultBranch}
             </Badge>
           </div>
+          {status !== "ready" && (
+            <div className="space-y-1.5" aria-label={`${Math.round(progressPercent)}% indexed`}>
+              <div className="flex justify-between text-xs text-muted-foreground"><span>{stage ? stage.replace("_", " ") : "Indexing"}</span><span>{Math.round(Math.min(100, Math.max(0, progressPercent)))}%</span></div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }} /></div>
+              <div className="flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
+                {processedFiles != null && <span>{processedFiles}/{totalFiles ?? 0} files</span>}
+                {processedChunks != null && <span>{processedChunks}/{totalChunks ?? 0} chunks</span>}
+                {processedEmbeddings != null && <span>{processedEmbeddings}/{totalEmbeddings ?? 0} vectors</span>}
+              </div>
+            </div>
+          )}
         </CardContent>
 
         <CardFooter className="flex items-center justify-between text-xs text-muted-foreground">

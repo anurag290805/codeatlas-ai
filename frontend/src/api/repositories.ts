@@ -29,6 +29,10 @@ export const RepositoryApi = {
     return apiClient.get<RepositoryDetailResponse>(`/repositories/${repositoryId}`);
   },
 
+  getRepositoryStatus(repositoryId: string): Promise<AxiosResponse<RepositoryDetailResponse>> {
+    return apiClient.get<RepositoryDetailResponse>(`/repositories/${repositoryId}/status`);
+  },
+
   getRepositoryFileTree(
     repositoryId: string,
   ): Promise<AxiosResponse<{ files: Array<{ id: number; relative_path: string; language: string | null; file_size_bytes: number; checksum_sha256: string; chunks_generated: number }> }>> {
@@ -46,5 +50,9 @@ export const RepositoryApi = {
 
   deleteRepository<TResponse = unknown>(repositoryId: string): Promise<AxiosResponse<TResponse>> {
     return apiClient.delete<TResponse>(`/repositories/${repositoryId}`);
+  },
+
+  reindexRepository(repositoryId: string): Promise<AxiosResponse<RepositoryDetailResponse>> {
+    return apiClient.post<RepositoryDetailResponse>(`/repositories/${repositoryId}/reindex`);
   },
 };

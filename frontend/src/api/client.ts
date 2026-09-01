@@ -24,6 +24,7 @@ export const systemClient: AxiosInstance = axios.create({
   baseURL: env.apiBaseUrl || undefined,
   timeout: 10_000,
   headers: { Accept: "application/json" },
+  withCredentials: true,
 });
 
 apiClient.interceptors.request.use(

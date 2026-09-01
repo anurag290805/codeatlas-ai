@@ -610,7 +610,12 @@ class CodeParser:
             spec.language: spec.extractor_factory() for spec in _LANGUAGE_SPECS
         }
 
-    def parse_repository(self, repository_id: int, repository_root: Path) -> RepositoryParseResult:
+    def parse_repository(
+        self,
+        repository_id: int,
+        repository_root: Path,
+        progress_callback: Callable[[str, int, int], None] | None = None,
+    ) -> RepositoryParseResult:
         """Parse every supported source file in a repository.
 
         Individual file failures never abort the run: each file is
@@ -637,10 +642,15 @@ class CodeParser:
         files_skipped = 0
         files_failed = 0
 
-        for file_path in self._iter_repository_files(repository_root):
+        discovered_files = list(self._iter_repository_files(repository_root))
+        candidate_files = [path for path in discovered_files if path.suffix.lower() in _EXTENSION_TO_SPEC]
+        files_skipped = len(discovered_files) - len(candidate_files)
+        if progress_callback:
+            progress_callback("discovering", 0, len(candidate_files))
+
+        for file_path in candidate_files:
             spec = _EXTENSION_TO_SPEC.get(file_path.suffix.lower())
             if spec is None:
-                files_skipped += 1
                 continue
 
             file_result = self.parse_file(repository_id, file_path, repository_root, spec)
@@ -653,6 +663,8 @@ class CodeParser:
             files_parsed += 1
             files.append(file_result)
             chunks.extend(file_result.chunks)
+            if progress_callback:
+                progress_callback("chunking", files_parsed, len(candidate_files))
 
         logger.info(
             "Repository parsing completed: repository_id=%s files_parsed=%d "

@@ -1,11 +1,11 @@
-"""Async Gemini language-model service for CodeAtlas AI."""
+"""Gemini-backed language-model service for CodeAtlas AI."""
 
 from __future__ import annotations
 
 import json
 import time
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
@@ -27,23 +27,47 @@ class ResponseFormat(str, Enum):
 
 
 class LLMServiceError(Exception):
-    """Base exception for LLM service failures."""
+    """Base exception for AI service failures."""
 
 
-class LLMInvalidPromptError(LLMServiceError): pass
-class LLMTimeoutError(LLMServiceError): pass
-class LLMProviderOutageError(LLMServiceError): pass
-class LLMModelNotFoundError(LLMServiceError): pass
-class LLMMalformedResponseError(LLMServiceError): pass
-class LLMContextOverflowError(LLMServiceError): pass
-class LLMRateLimitError(LLMServiceError): pass
-class LLMAuthenticationError(LLMServiceError): pass
+class LLMInvalidPromptError(LLMServiceError):
+    pass
+
+
+class LLMTimeoutError(LLMServiceError):
+    pass
+
+
+class LLMProviderOutageError(LLMServiceError):
+    pass
+
+
+class LLMModelNotFoundError(LLMServiceError):
+    pass
+
+
+class LLMMalformedResponseError(LLMServiceError):
+    pass
+
+
+class LLMContextOverflowError(LLMServiceError):
+    pass
+
+
+class LLMRateLimitError(LLMServiceError):
+    pass
+
+
+class LLMAuthenticationError(LLMServiceError):
+    pass
 
 
 @dataclass(frozen=True)
-class GeminiHealth:
-    reachable: bool
+class ProviderHealth:
+    configured: bool
+    healthy: bool
     model_available: bool
+    status: str
     message: str
 
 
@@ -97,7 +121,9 @@ class LLMResponse(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @property
-    def token_usage(self) -> UsageMetadata | None: return self.usage
+    def token_usage(self) -> UsageMetadata | None:
+        return self.usage
+
     @property
     def response_format(self) -> ResponseFormat:
         return ResponseFormat.JSON if self.answer.startswith("{") else ResponseFormat.MARKDOWN
@@ -111,7 +137,8 @@ class LLMStreamChunk(BaseModel):
     usage: UsageMetadata | None = None
 
     @property
-    def token_usage(self) -> UsageMetadata | None: return self.usage
+    def token_usage(self) -> UsageMetadata | None:
+        return self.usage
 
 
 class _AsyncClient(Protocol):
@@ -122,131 +149,137 @@ class _AsyncClient(Protocol):
 
 class AbstractLLMProvider(ABC):
     provider_name: LLMProviderName
+
+    @property
+    @abstractmethod
+    def model_name(self) -> str: ...
+
+    @abstractmethod
+    async def check_health(self) -> ProviderHealth: ...
+
     @abstractmethod
     async def generate(self, request: LLMRequest) -> tuple[str, UsageMetadata | None]: ...
+
     @abstractmethod
     async def generate_stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]: ...
 
 
 class GeminiProvider(AbstractLLMProvider):
-    """Provider implementation for Google's Gemini generateContent API."""
+    """Server-side Gemini Interactions API provider."""
 
-    _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-    _GROUNDING_SYSTEM_PROMPT = (
-        "You are CodeAtlas AI, a repository code assistant. Answer using the "
-        "provided repository context when relevant. Do not claim the repository "
-        "is unavailable when context is present. If the context lacks evidence, "
-        "say what is missing."
-    )
     provider_name = LLMProviderName.GEMINI
+    _BASE_URL = "https://generativelanguage.googleapis.com"
+    _SYSTEM_PROMPT = (
+        "You are CodeAtlas AI, a repository code assistant. Use only the "
+        "repository context delimited below as evidence. If it is insufficient, "
+        "say so explicitly; never invent files, symbols, or behavior."
+    )
 
     def __init__(self, settings: Settings | None = None, client: _AsyncClient | None = None) -> None:
         self._settings = settings or get_settings()
         self._owns_client = client is None
-        self._client = client or httpx.AsyncClient(base_url=self._BASE_URL, timeout=httpx.Timeout(self._settings.gemini_timeout_seconds))
-        logger.info("Initialized Gemini provider model={}", self._settings.gemini_model)
+        self._client = client or httpx.AsyncClient(base_url=self._BASE_URL)
+        logger.info("Initialized Gemini provider model={}", self.model_name)
+
+    @property
+    def model_name(self) -> str:
+        return self._settings.gemini_model
 
     async def aclose(self) -> None:
         if self._owns_client:
             await self._client.aclose()
 
-    async def check_health(self, timeout_seconds: float = 5.0) -> GeminiHealth:
+    async def check_health(self) -> ProviderHealth:
         if not self._settings.gemini_api_key:
-            return GeminiHealth(False, False, "Gemini API credentials are not configured.")
+            return ProviderHealth(False, False, False, "configuration_missing", "Gemini API key is not configured.")
         try:
-            response = await self._client.get(f"/models/{self._settings.gemini_model}", params={"key": self._settings.gemini_api_key}, timeout=timeout_seconds)
-            self._validate_status(response)
-            return GeminiHealth(True, True, "Gemini and the configured model are available.")
-        except LLMServiceError as exc:
-            return GeminiHealth(False, False, str(exc))
+            response = await self._client.get(f"/v1beta/models/{self.model_name}", headers={"x-goog-api-key": self._settings.gemini_api_key}, timeout=5.0)
+            if response.status_code in {401, 403}:
+                return ProviderHealth(True, False, False, "authentication_failure", "Gemini rejected the configured API key.")
+            if response.status_code == 429:
+                return ProviderHealth(True, False, False, "rate_limited", "Gemini is rate limiting health checks.")
+            if response.status_code == 404:
+                return ProviderHealth(True, False, False, "model_unavailable", "The configured Gemini model was not found.")
+            if response.status_code >= 400:
+                return ProviderHealth(True, False, False, "unavailable", "Gemini health check failed.")
+            return ProviderHealth(True, True, True, "healthy", "Gemini and the configured model are available.")
         except httpx.TimeoutException:
-            return GeminiHealth(False, False, "Gemini health check timed out. Please retry.")
+            return ProviderHealth(True, False, False, "timeout", "Gemini health check timed out.")
         except httpx.RequestError:
-            return GeminiHealth(False, False, "Gemini is unavailable. Please retry shortly.")
+            return ProviderHealth(True, False, False, "unavailable", "Gemini is unreachable.")
 
     async def generate(self, request: LLMRequest) -> tuple[str, UsageMetadata | None]:
         if not self._settings.gemini_api_key:
-            raise LLMAuthenticationError("Gemini API credentials are not configured.")
-        model = request.model or self._settings.gemini_model
+            raise LLMAuthenticationError("Gemini is not configured on the server.")
+        body: dict[str, Any] = {
+            "model": request.model or self.model_name,
+            "input": f"{self._SYSTEM_PROMPT}\n\n{self._prompt(request)}",
+            "generation_config": {"temperature": request.temperature, "max_output_tokens": min(request.max_tokens, self._settings.gemini_max_tokens)},
+            "store": False,
+        }
         try:
-            response = await self._client.post(f"/models/{model}:generateContent", params={"key": self._settings.gemini_api_key}, json=self._payload(request))
+            response = await self._client.post("/v1beta/interactions", headers={"x-goog-api-key": self._settings.gemini_api_key}, json=body, timeout=self._settings.gemini_timeout_seconds)
         except httpx.TimeoutException as exc:
-            raise LLMTimeoutError("Gemini generation timed out. Please retry.") from exc
+            raise LLMTimeoutError("Gemini generation timed out.") from exc
         except httpx.RequestError as exc:
-            raise LLMProviderOutageError("Gemini could not be reached. Please retry shortly.") from exc
-        data = self._parse_response(response)
-        try:
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise LLMMalformedResponseError("Gemini response did not contain answer text.") from exc
-        usage = data.get("usageMetadata")
-        return text, self._usage(usage) if isinstance(usage, Mapping) else None
-
-    async def generate_stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
-        text, usage = await self.generate(request)
-        yield LLMStreamChunk(delta=text, is_final=True, model=request.model or self._settings.gemini_model, usage=usage)
-
-    def _payload(self, request: LLMRequest) -> dict[str, Any]:
-        prompt = request.query if not request.context else f"Repository context:\n{request.context}\n\nQuestion: {request.query}"
-        generation_config: dict[str, Any] = {"temperature": request.temperature, "maxOutputTokens": min(request.max_tokens, self._settings.gemini_max_tokens)}
-        if request.response_format is ResponseFormat.JSON:
-            generation_config["responseMimeType"] = "application/json"
-        return {"systemInstruction": {"parts": [{"text": self._GROUNDING_SYSTEM_PROMPT}]}, "contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": generation_config}
-
-    @staticmethod
-    def _usage(data: Mapping[str, Any]) -> UsageMetadata:
-        prompt = int(data.get("promptTokenCount", 0) or 0)
-        completion = int(data.get("candidatesTokenCount", 0) or 0)
-        return UsageMetadata(prompt_tokens=prompt, completion_tokens=completion, total_tokens=int(data.get("totalTokenCount", prompt + completion) or 0))
-
-    @classmethod
-    def _parse_response(cls, response: httpx.Response) -> dict[str, Any]:
-        cls._validate_status(response)
-        try:
-            data = response.json()
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise LLMMalformedResponseError("Gemini returned invalid JSON.") from exc
-        if not isinstance(data, dict):
-            raise LLMMalformedResponseError("Gemini response was not a JSON object.")
-        return data
-
-    @staticmethod
-    def _validate_status(response: httpx.Response) -> None:
+            raise LLMProviderOutageError("Gemini could not be reached.") from exc
         if response.status_code in {401, 403}:
-            raise LLMAuthenticationError("Gemini API credentials were rejected.")
+            raise LLMAuthenticationError("Gemini rejected the configured API key.")
         if response.status_code == 404:
             raise LLMModelNotFoundError("The configured Gemini model was not found.")
         if response.status_code == 429:
-            raise LLMRateLimitError("Gemini is rate limiting requests. Please retry shortly.")
+            raise LLMRateLimitError("Gemini rate limit or quota was exceeded.")
         if response.status_code >= 500:
-            raise LLMProviderOutageError("Gemini is temporarily unavailable.")
+            raise LLMProviderOutageError("Gemini returned a server error.")
         if response.status_code >= 400:
             raise LLMMalformedResponseError("Gemini rejected the request.")
+        try:
+            data = response.json()
+            steps = data["steps"]
+            parts = [part for step in steps if isinstance(step, dict) and step.get("type") == "model_output" for part in step.get("content", [])]
+            text = "".join(str(part["text"]) for part in parts if isinstance(part, dict) and "text" in part)
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise LLMMalformedResponseError("Gemini returned an invalid response.") from exc
+        if not text.strip():
+            raise LLMMalformedResponseError("Gemini returned an empty response.")
+        usage_data = data.get("usage", {})
+        usage = UsageMetadata(prompt_tokens=int(usage_data.get("total_input_tokens", 0)), completion_tokens=int(usage_data.get("total_output_tokens", 0)), total_tokens=int(usage_data.get("total_tokens", 0))) if usage_data else None
+        return text, usage
+
+    async def generate_stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
+        text, usage = await self.generate(request)
+        yield LLMStreamChunk(delta=text, is_final=True, model=request.model or self.model_name, usage=usage)
+
+    @staticmethod
+    def _prompt(request: LLMRequest) -> str:
+        context = request.context.strip() or "(No repository context was retrieved.)"
+        return f"<repository_context>\n{context}\n</repository_context>\n\n<question>\n{request.query}\n</question>"
 
 
 class LLMService:
-    """Validate requests and orchestrate grounded Gemini generation."""
+    """Validate requests and orchestrate generation through Gemini."""
 
     def __init__(self, provider: AbstractLLMProvider | None = None, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
         self._provider = provider or GeminiProvider(self._settings)
-        self.provider_name = LLMProviderName.GEMINI
-        self.model_name = self._settings.gemini_model
+        self.provider_name = self._provider.provider_name
+        self.model_name = self._provider.model_name
 
     def is_ready(self) -> bool:
-        return bool(self._settings.gemini_api_key and self.model_name)
+        return bool(self.model_name) and bool(self._settings.gemini_api_key)
 
-    async def check_health(self) -> GeminiHealth:
-        if not isinstance(self._provider, GeminiProvider):
-            return GeminiHealth(self.is_ready(), self.is_ready(), "Gemini provider is configured.")
+    async def check_health(self) -> ProviderHealth:
+        if not self.is_ready():
+            return ProviderHealth(False, False, False, "configuration_missing", "Gemini API key is not configured.")
         return await self._provider.check_health()
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         self._validate_request(request)
         started = time.perf_counter()
+        logger.info("LLM generation started provider={} model={}", self.provider_name.value, request.model or self.model_name)
         text, usage = await self._provider.generate(request)
         response = self._build_response(request, text, usage, time.perf_counter() - started)
-        logger.info("Gemini generation completed model={} latency_seconds={:.3f}", response.model, response.latency_seconds)
+        logger.info("LLM generation completed model={} latency_seconds={:.3f}", response.model, response.latency_seconds)
         return response
 
     async def generate_stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
@@ -266,13 +299,15 @@ class LLMService:
         query = getattr(retrieval_result, "query", getattr(retrieval_result, "query_text", ""))
         if hasattr(query, "text"):
             query = query.text
-        context = getattr(retrieval_result, "assembled_context", "")
-        if hasattr(context, "chunks"):
-            context = "\n\n".join(str(chunk.code) for chunk in context.chunks)
-        citations = tuple(Citation.model_validate(c, from_attributes=True) for c in getattr(retrieval_result, "citations", ()))
-        return LLMRequest(query=query, context=str(context), citations=citations, response_format=response_format)
+        context_value = getattr(retrieval_result, "assembled_context", "")
+        if hasattr(context_value, "chunks"):
+            context_value = "\n\n".join(str(chunk.code) for chunk in context_value.chunks)
+        citations = tuple(Citation.model_validate(citation, from_attributes=True) for citation in getattr(retrieval_result, "citations", ()))
+        return LLMRequest(query=query, context=str(context_value), citations=citations, response_format=response_format)
 
     def _validate_request(self, request: LLMRequest) -> None:
+        if not request.query.strip():
+            raise LLMInvalidPromptError("LLM query must not be blank")
         estimated = (len(request.query) + len(request.context)) // 4
         if estimated + request.max_tokens > self._settings.retrieval_token_budget * 2:
             raise LLMContextOverflowError("LLM prompt exceeds the configured context budget")
@@ -282,8 +317,10 @@ class LLMService:
             try:
                 parsed = json.loads(text)
             except json.JSONDecodeError as exc:
-                raise LLMMalformedResponseError("Gemini JSON response could not be decoded.") from exc
+                raise LLMMalformedResponseError("AI provider JSON response could not be decoded") from exc
             if not isinstance(parsed, dict) or not isinstance(parsed.get("answer"), str):
-                raise LLMMalformedResponseError("Gemini JSON response must contain an answer.")
+                raise LLMMalformedResponseError("AI provider JSON response must contain an answer")
             text = parsed["answer"]
-        return LLMResponse(answer=text.strip(), citations=request.citations, model=request.model or self.model_name, usage=usage, latency_seconds=max(0.0, latency))
+        if not text.strip():
+            raise LLMMalformedResponseError("AI provider returned an empty answer")
+        return LLMResponse(answer=text.strip(), citations=request.citations, provider=self.provider_name, model=request.model or self.model_name, usage=usage, latency_seconds=max(0.0, latency))

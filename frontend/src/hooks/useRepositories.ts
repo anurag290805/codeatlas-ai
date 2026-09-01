@@ -17,11 +17,11 @@ export function useRepositories() {
     placeholderData: (previous) => previous,
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
-      return items.some((item) => ["pending", "indexing", "cloning", "parsing", "embedding"].includes(item.status)) ? 5_000 : false;
+      return items.some((item) => !["ready", "indexed", "failed", "index_failed", "failed_import"].includes(item.status)) ? 5_000 : false;
     },
     retry: (failureCount, error) => {
-      const status = error instanceof ApiRequestError ? error.status : undefined;
-      return failureCount < 3 && (status === undefined || status >= 500);
+      const requestStatus = error instanceof ApiRequestError ? error.status : undefined;
+      return failureCount < 3 && (requestStatus === undefined || requestStatus >= 500);
     },
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
@@ -52,6 +52,19 @@ export function useDeleteRepository() {
         queryClient.invalidateQueries({ queryKey: ["repositories"] }),
         queryClient.removeQueries({ queryKey: ["repository", repositoryId] }),
         queryClient.removeQueries({ queryKey: ["repository-files", repositoryId] }),
+      ]);
+    },
+  });
+}
+
+export function useReindexRepository() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (repositoryId: string) => RepositoryApi.reindexRepository(repositoryId),
+    onSuccess: async (_response, repositoryId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["repository", repositoryId] }),
+        queryClient.invalidateQueries({ queryKey: ["repositories"] }),
       ]);
     },
   });

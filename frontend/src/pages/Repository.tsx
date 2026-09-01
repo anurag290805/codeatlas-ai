@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, ArrowLeft, GitBranch, Loader2, RefreshCw, ShieldCheck, Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
@@ -9,11 +9,13 @@ import { RepositoryHeader } from "@/components/repository/RepositoryHeader";
 import { RepositoryOverview } from "@/components/repository/RepositoryOverview";
 import { RepositoryStats } from "@/components/repository/RepositoryStats";
 import { useRepository, useRepositoryFile, useRepositoryFileTree } from "@/hooks/useRepository";
+import { useReindexRepository } from "@/hooks/useRepositories";
 import type {
   Repository,
   RepositoryDetailResponse,
   RepositoryProcessingStatus,
 } from "@/types/repository";
+import { useGithubIntelligence } from "@/hooks/useIntelligence";
 
 function repositoryName(data: RepositoryDetailResponse): string {
   const value = data.repository_name.trim();
@@ -38,6 +40,10 @@ function processingStatus(status: RepositoryDetailResponse["status"]): Repositor
     case "parsing":
     case "embedding":
       return "pending";
+    case "discovering_files":
+    case "chunking":
+    case "storing":
+      return "pending";
     case "index_failed":
     case "failed_import":
     case "failed":
@@ -45,6 +51,11 @@ function processingStatus(status: RepositoryDetailResponse["status"]): Repositor
     default:
       return "pending";
   }
+}
+
+function stageStatus(stage: RepositoryDetailResponse["stage"]): RepositoryProcessingStatus {
+  if (stage === "cloning" || stage === "embedding" || stage === "chunking" || stage === "discovering" || stage === "storing") return stage === "discovering" ? "discovering_files" : stage;
+  return "pending";
 }
 
 function toRepository(data: RepositoryDetailResponse): Repository {
@@ -71,7 +82,15 @@ function toRepository(data: RepositoryDetailResponse): Repository {
     isPrivate: data.visibility === "private",
     defaultBranch: data.default_branch,
     branches,
-    status: processingStatus(data.status),
+    status: data.stage && data.status !== "ready" && data.status !== "indexed" && data.status !== "failed" && data.status !== "index_failed" && data.status !== "failed_import"
+      ? stageStatus(data.stage)
+      : processingStatus(data.status),
+    stage: data.stage,
+    progress_percent: data.progress_percent,
+    processed_files: data.processed_files,
+    processed_chunks: data.processed_chunks,
+    processed_embeddings: data.processed_embeddings,
+    estimated_seconds_remaining: data.estimated_seconds_remaining,
     primaryLanguage: data.primary_language ?? undefined,
     sizeBytes: data.metrics?.sizeBytes ?? 0,
     statistics,
@@ -93,6 +112,8 @@ export function Repository() {
   });
   const selectedPath = selection.repositoryId === repositoryId ? selection.path : undefined;
   const fileQuery = useRepositoryFile(repositoryId, selectedPath);
+  const githubQuery = useGithubIntelligence(repositoryId);
+  const reindexRepository = useReindexRepository();
 
   const repository = useMemo(
     () => (repositoryQuery.data ? toRepository(repositoryQuery.data) : undefined),
@@ -144,7 +165,21 @@ export function Repository() {
         repository={repository}
         onRefresh={() => void repositoryQuery.refetch()}
         isRefreshing={repositoryQuery.isFetching}
+        onRetry={repository.status === "failed" ? () => void reindexRepository.mutateAsync(repositoryId ?? "") : undefined}
       />
+      {repositoryQuery.data?.error_message && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="p-4 text-sm text-destructive">
+            {repositoryQuery.data.error_message}
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><GitBranch className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">GitHub stars</p><p className="font-semibold">{githubQuery.data?.available ? githubQuery.data.stars.toLocaleString() : "Unavailable"}</p></div></div></CardContent></Card>
+        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><Boxes className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">Dependencies</p><Link className="font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/dependencies`}>Inspect packages</Link></div></div></CardContent></Card>
+        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><ShieldCheck className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">Security</p><Link className="font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/security`}>Scan with OSV</Link></div></div></CardContent></Card>
+      </div>
 
       <RepositoryOverview repository={repository} />
       <RepositoryStats stats={repository.statistics!} />

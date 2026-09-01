@@ -9,7 +9,8 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.core.config import Settings
-from app.core.llm import GeminiProvider
+from app.api import routes_query
+from app.core.llm import GeminiProvider, LLMProviderName, LLMRequest, LLMService, ProviderHealth
 from app.utils.logger import _create_file_handler
 
 
@@ -86,23 +87,62 @@ def test_configured_cors_origin_allows_request_and_preflight(monkeypatch) -> Non
         assert "access-control-allow-origin" not in rejected.headers
 
 
-class _HealthResponse:
-    status_code = 200
-
-    def json(self):
-        return {"name": "gemini-2.5-flash"}
-
-
-class _HealthClient:
+class _GeminiClient:
     async def get(self, _url: str, **_kwargs):
-        return _HealthResponse()
+        return SimpleNamespace(status_code=200)
+
+    async def post(self, _url: str, **kwargs):
+        self.payload = kwargs["json"]
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "steps": [{"type": "model_output", "content": [{"type": "text", "text": "grounded answer"}]}],
+                "usage": {"total_input_tokens": 4, "total_output_tokens": 2, "total_tokens": 6},
+            },
+        )
 
 
-def test_gemini_health_probe_reports_model_availability() -> None:
-    settings = Settings(_env_file=None, gemini_api_key="test-key", gemini_model="gemini-2.5-flash")
-    health = asyncio.run(GeminiProvider(settings=settings, client=_HealthClient()).check_health())
-    assert health.reachable is True
-    assert health.model_available is True
+def test_gemini_generation_is_server_side_and_preserves_rag_context() -> None:
+    settings = Settings(_env_file=None, gemini_api_key="test-key")
+    client = _GeminiClient()
+    provider = GeminiProvider(settings=settings, client=client)
+    response = asyncio.run(provider.generate(LLMRequest(query="where?", context="File: src/main.py\nmain()")))
+    assert response[0] == "grounded answer"
+    assert "src/main.py" in client.payload["input"]
+    assert "test-key" not in str(client.payload)
+
+
+def test_gemini_is_the_only_provider() -> None:
+    settings = Settings(_env_file=None, gemini_api_key="test-key")
+    service = LLMService(settings=settings)
+    assert service.provider_name is LLMProviderName.GEMINI
+    assert service.is_ready() is True
+
+
+def test_gemini_health_is_healthy_when_retriever_is_ready() -> None:
+    class HealthyGemini:
+        provider_name = LLMProviderName.GEMINI
+        model_name = "gemini-2.5-flash"
+
+        async def check_health(self):
+            return ProviderHealth(True, True, True, "healthy", "Gemini is available.")
+
+    class ReadyRetriever:
+        def is_ready(self):
+            return True
+
+    health = asyncio.run(routes_query.query_health(ReadyRetriever(), LLMService(provider=HealthyGemini(), settings=Settings(_env_file=None, gemini_api_key="test-key"))))
+    assert health.status == "healthy"
+    assert health.provider_healthy is True
+    assert health.rag_status == "ready"
+
+
+def test_missing_gemini_key_is_a_clear_provider_health_state() -> None:
+    service = LLMService(settings=Settings(_env_file=None))
+    health = asyncio.run(service.check_health())
+    assert health.status == "configuration_missing"
+    assert health.healthy is False
+    assert health.configured is False
 
 
 def test_logger_falls_back_when_log_file_cannot_be_created(tmp_path: Path) -> None:

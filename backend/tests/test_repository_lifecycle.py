@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -102,6 +103,19 @@ def test_failed_indexing_discards_only_staged_artifacts() -> None:
     update_status.assert_called_once()
     assert update_status.call_args.kwargs["repository_id"] == "7"
     assert update_status.call_args.kwargs["status"] is schemas.RepositoryStatus.FAILED_IMPORT
+
+
+def test_abandoned_indexing_job_is_recovered_on_observation() -> None:
+    repository = repository_stub(schemas.RepositoryStatus.INDEXING.value)
+    repository.last_index_attempt_at = datetime.now(timezone.utc) - timedelta(hours=3)
+    db = Mock()
+    recovered = repository_stub(schemas.RepositoryStatus.FAILED_IMPORT.value)
+    with patch.object(routes_repo.crud, "update_repository_status", return_value=recovered) as update_status:
+        result = routes_repo._recover_stale_indexing(db, repository)
+
+    assert result.status == schemas.RepositoryStatus.FAILED_IMPORT.value
+    update_status.assert_called_once()
+    assert "Retry indexing" in update_status.call_args.kwargs["error_message"]
 
 
 def test_graph_service_normalizes_parser_repository_id(tmp_path: Path) -> None:
