@@ -6,6 +6,8 @@ import time
 from fastapi.testclient import TestClient
 
 from app.core.workspace import _decode, _set_cookie, _sign
+from app.core.vector_store import VectorStoreService
+from app.core.workspace import _workspace_context
 from app.main import app
 
 
@@ -34,6 +36,16 @@ def test_expired_workspace_cookie_is_rejected() -> None:
     workspace_id = "c" * 32
     issued_at = int(time.time()) - (60 * 60 * 24 * 31)
     assert _decode(f"{workspace_id}.{issued_at}.{_sign(workspace_id, issued_at)}") is None
+
+
+def test_workspace_collection_name_fits_chroma_limit() -> None:
+    token = _workspace_context.set("d" * 32)
+    try:
+        name = VectorStoreService._collection_name_for("987654321")
+    finally:
+        _workspace_context.reset(token)
+    assert len(name) <= 63
+    assert name.startswith("ca_")
 
 
 def test_repository_listing_rotates_an_invalid_cookie_without_500() -> None:
