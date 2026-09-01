@@ -16,7 +16,7 @@ managed PostgreSQL database instead of the ephemeral application disk.
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -155,6 +155,26 @@ def initialize_database() -> None:
 
         logger.info("Ensuring database schema exists without modifying existing data.")
         Base.metadata.create_all(bind=engine)
+        inspector = inspect(engine)
+        if "workspace_id" not in {column["name"] for column in inspector.get_columns("repositories")}:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE repositories ADD COLUMN workspace_id VARCHAR(128)"))
+                connection.execute(text("CREATE INDEX IF NOT EXISTS ix_repositories_workspace_id ON repositories (workspace_id)"))
+
+        repository_columns = {column["name"] for column in inspect(engine).get_columns("repositories")}
+        additions = {
+            "indexing_stage": "VARCHAR(50) NOT NULL DEFAULT 'queued'",
+            "indexing_progress": "INTEGER NOT NULL DEFAULT 0",
+            "indexing_started_at": "TIMESTAMP WITH TIME ZONE",
+            "indexing_heartbeat_at": "TIMESTAMP WITH TIME ZONE",
+        }
+        with engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in repository_columns:
+                    connection.execute(text(f"ALTER TABLE repositories ADD COLUMN {name} {definition}"))
+            if engine.dialect.name == "postgresql":
+                connection.execute(text("ALTER TABLE repositories DROP CONSTRAINT IF EXISTS uq_repositories_repository_url"))
+                connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_repositories_workspace_url ON repositories (workspace_id, repository_url)"))
 
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))

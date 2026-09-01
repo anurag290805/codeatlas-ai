@@ -42,7 +42,7 @@ class Repository(Base):
 
     __tablename__ = "repositories"
     __table_args__ = (
-        UniqueConstraint("repository_url", name="uq_repositories_repository_url"),
+        UniqueConstraint("workspace_id", "repository_url", name="uq_repositories_workspace_url"),
         Index("ix_repositories_repository_name", "repository_name"),
         Index("ix_repositories_created_at", "created_at"),
     )
@@ -55,8 +55,10 @@ class Repository(Base):
     local_path: Mapped[str] = mapped_column(String(2048), nullable=False)
     current_commit_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # Reserved for future multi-user support; unused until authentication
-    # is introduced, but present now to avoid a breaking schema change.
+    # Browser workspace/account identity. Null legacy rows are intentionally
+    # not visible to new workspaces until explicitly claimed by migration.
+    workspace_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # Retained for compatibility with earlier deployments.
     owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_private: Mapped[bool] = mapped_column(default=False, nullable=False)
 
@@ -69,6 +71,10 @@ class Repository(Base):
     last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_indexing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_index_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    indexing_stage: Mapped[str] = mapped_column(String(50), nullable=False, default="queued")
+    indexing_progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    indexing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    indexing_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow

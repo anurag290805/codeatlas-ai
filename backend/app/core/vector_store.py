@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -509,14 +510,16 @@ class VectorStoreService:
         )
 
     @staticmethod
-    def _collection_name_for(repository_id: str) -> str:
+    def _collection_name_for(repository_id: str, workspace_id: str | None = None) -> str:
         """Derive the collection name for a repository's isolated index."""
-        return f"{_COLLECTION_NAME_PREFIX}_{repository_id}"
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+        return f"{_COLLECTION_NAME_PREFIX}_{namespace}_{repository_id}"
 
-    def _active_collection_name(self, repository_id: str) -> str:
+    def _active_collection_name(self, repository_id: str, workspace_id: str | None = None) -> str:
         """Resolve the durable collection pointer, with legacy-name fallback."""
         settings = get_settings()
-        pointer = settings.chroma_persist_directory / f"active_{repository_id}.json"
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+        pointer = settings.chroma_persist_directory / f"active_{namespace}_{repository_id}.json"
         try:
             payload = json.loads(pointer.read_text(encoding="utf-8"))
             name = str(payload.get("collection", ""))
@@ -524,11 +527,11 @@ class VectorStoreService:
                 return name
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             pass
-        return self._collection_name_for(repository_id)
+        return self._collection_name_for(repository_id, workspace_id)
 
-    def stage_embeddings(self, repository_id: str, embeddings: list[ChunkEmbedding]) -> str:
+    def stage_embeddings(self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None) -> str:
         """Write a complete new generation without touching the active index."""
-        collection_name = f"{self._collection_name_for(repository_id)}_{uuid.uuid4().hex}"
+        collection_name = f"{self._collection_name_for(repository_id, workspace_id)}_{uuid.uuid4().hex}"
         self._store.create_collection(collection_name)
         try:
             self._store.upsert_vectors(collection_name, embeddings)
@@ -540,12 +543,13 @@ class VectorStoreService:
             raise
         return collection_name
 
-    def publish_staged_collection(self, repository_id: str, collection_name: str) -> None:
+    def publish_staged_collection(self, repository_id: str, collection_name: str, workspace_id: str | None = None) -> None:
         """Publish a staged generation by atomically replacing its pointer."""
         settings = get_settings()
         settings.chroma_persist_directory.mkdir(parents=True, exist_ok=True)
-        pointer = settings.chroma_persist_directory / f"active_{repository_id}.json"
-        old_name = self._active_collection_name(repository_id)
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+        pointer = settings.chroma_persist_directory / f"active_{namespace}_{repository_id}.json"
+        old_name = self._active_collection_name(repository_id, workspace_id)
         temporary = pointer.with_suffix(f".json.tmp-{uuid.uuid4().hex}")
         temporary.write_text(json.dumps({"collection": collection_name}), encoding="utf-8")
         temporary.replace(pointer)
@@ -558,16 +562,16 @@ class VectorStoreService:
         if self._store.collection_exists(collection_name):
             self._store.delete_collection(collection_name)
 
-    def ensure_repository_collection(self, repository_id: str) -> None:
+    def ensure_repository_collection(self, repository_id: str, workspace_id: str | None = None) -> None:
         """Create the repository's collection if it does not already exist."""
-        self._store.create_collection(self._collection_name_for(repository_id))
+        self._store.create_collection(self._collection_name_for(repository_id, workspace_id))
 
-    def repository_collection_exists(self, repository_id: str) -> bool:
+    def repository_collection_exists(self, repository_id: str, workspace_id: str | None = None) -> bool:
         """Return whether a collection exists for ``repository_id``."""
-        return self._store.collection_exists(self._active_collection_name(repository_id))
+        return self._store.collection_exists(self._active_collection_name(repository_id, workspace_id))
 
     def index_embeddings(
-        self, repository_id: str, embeddings: list[ChunkEmbedding]
+        self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None
     ) -> int:
         """
         Persist a batch of embeddings for a repository.
@@ -591,12 +595,12 @@ class VectorStoreService:
             )
             return 0
 
-        collection_name = self._active_collection_name(repository_id)
-        self.ensure_repository_collection(repository_id)
+        collection_name = self._active_collection_name(repository_id, workspace_id)
+        self.ensure_repository_collection(repository_id, workspace_id)
         return self._store.upsert_vectors(collection_name, embeddings)
 
     def update_embeddings(
-        self, repository_id: str, embeddings: list[ChunkEmbedding]
+        self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None
     ) -> int:
         """
         Update previously indexed embeddings for a repository.
@@ -605,14 +609,14 @@ class VectorStoreService:
         insertion is idempotent; the distinct name documents intent at
         call sites that re-index modified files.
         """
-        return self.index_embeddings(repository_id, embeddings)
+        return self.index_embeddings(repository_id, embeddings, workspace_id)
 
     def search(
         self,
         repository_id: str,
         query_vector: list[float],
         top_k: int = 10,
-        filters: SearchFilters | None = None,
+        filters: SearchFilters | None = None, workspace_id: str | None = None,
     ) -> list[VectorSearchResult]:
         """
         Perform a similarity search scoped to a single repository.
@@ -633,7 +637,7 @@ class VectorStoreService:
         if top_k <= 0:
             raise VectorSearchError("top_k must be a positive integer.")
 
-        collection_name = self._active_collection_name(repository_id)
+        collection_name = self._active_collection_name(repository_id, workspace_id)
         logger.info(
             "Running similarity search on repository '%s' (top_k=%d).",
             repository_id,
@@ -652,7 +656,7 @@ class VectorStoreService:
         collection_name = self._active_collection_name(repository_id)
         return self._store.delete_vectors(collection_name, chunk_ids)
 
-    def delete_repository(self, repository_id: str) -> None:
+    def delete_repository(self, repository_id: str, workspace_id: str | None = None) -> None:
         """
         Permanently delete a repository's entire vector collection.
 
@@ -660,7 +664,7 @@ class VectorStoreService:
         existing collection rather than raising an error, since callers
         frequently invoke this as part of idempotent cleanup routines.
         """
-        collection_name = self._active_collection_name(repository_id)
+        collection_name = self._active_collection_name(repository_id, workspace_id)
         if not self._store.collection_exists(collection_name):
             logger.warning(
                 "delete_repository called for '%s' but no collection exists.",
@@ -669,7 +673,8 @@ class VectorStoreService:
             return
         self._store.delete_collection(collection_name)
         try:
-            (get_settings().chroma_persist_directory / f"active_{repository_id}.json").unlink(missing_ok=True)
+            namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+            (get_settings().chroma_persist_directory / f"active_{namespace}_{repository_id}.json").unlink(missing_ok=True)
         except OSError:
             logger.warning("Failed to remove active collection pointer repository_id=%s", repository_id)
 
@@ -678,9 +683,9 @@ class VectorStoreService:
         collection_name = self._collection_name_for(repository_id)
         self._store.reset_collection(collection_name)
 
-    def get_repository_stats(self, repository_id: str) -> CollectionStats:
+    def get_repository_stats(self, repository_id: str, workspace_id: str | None = None) -> CollectionStats:
         """Return vector count statistics for a repository's collection."""
-        collection_name = self._active_collection_name(repository_id)
+        collection_name = self._active_collection_name(repository_id, workspace_id)
         vector_count = self._store.count_vectors(collection_name)
         return CollectionStats(
             collection_name=collection_name,
@@ -697,6 +702,6 @@ class VectorStoreService:
             embeddings = embeddings.embeddings
         return self.index_embeddings(repository_id, list(embeddings or []))
 
-    def delete_repository_embeddings(self, repository_id: str) -> None:
+    def delete_repository_embeddings(self, repository_id: str, workspace_id: str | None = None) -> None:
         """Compatibility alias for deleting a repository collection."""
-        self.delete_repository(repository_id)
+        self.delete_repository(repository_id, workspace_id)

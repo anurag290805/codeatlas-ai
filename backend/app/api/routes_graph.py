@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from app.core.auth import get_workspace_id
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -143,14 +144,14 @@ class GraphHealthResponse(BaseModel):
 # ----------------------------------------------------------------------
 
 
-def _ensure_repository_exists(db: Session, repository_id: str) -> None:
+def _ensure_repository_exists(db: Session, repository_id: str, workspace_id: str) -> None:
     """
     Verify a repository record exists before serving graph data for it.
 
     Raises:
         HTTPException: 404 if no repository with ``repository_id`` exists.
     """
-    repository = crud.get_repository(db, repository_id)
+    repository = crud.get_repository(db, repository_id, workspace_id=workspace_id)
     if repository is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -248,8 +249,9 @@ async def get_repository_graph(
     repository_id: str,
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> RepositoryGraphResponse:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
     logger.info("Full graph requested for repository '%s'.", repository_id)
 
     try:
@@ -287,8 +289,9 @@ async def get_graph_statistics(
     repository_id: str,
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> GraphStatisticsResponse:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
     logger.info("Graph statistics requested for repository '%s'.", repository_id)
 
     graph = _get_graph_or_404(graph_service, repository_id)
@@ -310,8 +313,9 @@ async def list_graph_nodes(
     node_type: str | None = Query(default=None, description="Filter nodes by node type."),
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> list[GraphNodeResponse]:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
     graph = _get_graph_or_404(graph_service, repository_id)
 
     if file_path is not None:
@@ -350,8 +354,9 @@ async def list_graph_edges(
     ),
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> list[GraphEdgeResponse]:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
     graph = _get_graph_or_404(graph_service, repository_id)
     relationship_type = _parse_relationship_type(relationship)
 
@@ -381,8 +386,9 @@ async def get_graph_node(
     node_id: str,
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> GraphNodeResponse:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
     graph = _get_graph_or_404(graph_service, repository_id)
 
     logger.info("Node '%s' requested for repository '%s'.", node_id, repository_id)
@@ -421,8 +427,9 @@ async def get_graph_neighbors(
     ),
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> TraversalResponse:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
     relationship_type = _parse_relationship_type(relationship)
 
     logger.info(
@@ -484,8 +491,9 @@ async def get_shortest_path(
     ),
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> PathResponse:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
     parsed_relationship_types = _parse_relationship_types(relationship_types)
 
     logger.info(
@@ -531,8 +539,9 @@ async def get_graph_health(
     repository_id: str,
     db: Session = Depends(get_db),
     graph_service: GraphService = Depends(get_graph_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> GraphHealthResponse:
-    _ensure_repository_exists(db, repository_id)
+    _ensure_repository_exists(db, repository_id, workspace_id)
 
     try:
         graph = graph_service.get_graph(repository_id)

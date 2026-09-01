@@ -41,6 +41,7 @@ def create_repository(
     local_path: str = "",
     current_commit_hash: str | None = None,
     obj_in: object | None = None,
+    workspace_id: str | None = None,
 ) -> Repository:
     """Create and persist a new `Repository` record.
 
@@ -73,6 +74,7 @@ def create_repository(
         default_branch=default_branch,
         local_path=local_path,
         current_commit_hash=current_commit_hash,
+        workspace_id=workspace_id,
     )
     session.add(repository)
     try:
@@ -91,7 +93,7 @@ def create_repository(
     return repository
 
 
-def get_repository_by_id(session: Session, repository_id: int) -> Repository | None:
+def get_repository_by_id(session: Session, repository_id: int, *, workspace_id: str | None = None) -> Repository | None:
     """Fetch a `Repository` by its primary key.
 
     Args:
@@ -101,18 +103,19 @@ def get_repository_by_id(session: Session, repository_id: int) -> Repository | N
     Returns:
         The matching `Repository`, or None if not found.
     """
-    return session.get(Repository, repository_id)
+    repository = session.get(Repository, repository_id)
+    return repository if workspace_id is None or (repository and repository.workspace_id == workspace_id) else None
 
 
-def get_repository(session: Session, repository_id: int | str) -> Repository | None:
+def get_repository(session: Session, repository_id: int | str, *, workspace_id: str | None = None) -> Repository | None:
     """Fetch a repository using the route-layer repository identifier."""
     try:
-        return get_repository_by_id(session, int(repository_id))
+        return get_repository_by_id(session, int(repository_id), workspace_id=workspace_id)
     except (TypeError, ValueError):
         return None
 
 
-def get_repository_by_url(session: Session, repository_url: str) -> Repository | None:
+def get_repository_by_url(session: Session, repository_url: str, *, workspace_id: str | None = None) -> Repository | None:
     """Fetch a `Repository` by its unique GitHub URL.
 
     Args:
@@ -123,6 +126,8 @@ def get_repository_by_url(session: Session, repository_url: str) -> Repository |
         The matching `Repository`, or None if not found.
     """
     statement = select(Repository).where(Repository.repository_url == repository_url)
+    if workspace_id is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
     return session.execute(statement).scalar_one_or_none()
 
 
@@ -146,7 +151,7 @@ def get_repository_by_name(session: Session, repository_name: str) -> Repository
 
 
 def list_repositories(
-    session: Session, *, limit: int = 50, offset: int = 0, skip: int | None = None
+    session: Session, *, limit: int = 50, offset: int = 0, skip: int | None = None, workspace_id: str | None = None
 ) -> Sequence[Repository]:
     """List repositories ordered by most recently created.
 
@@ -166,11 +171,13 @@ def list_repositories(
         .limit(limit)
         .offset(offset)
     )
+    if workspace_id is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
     return session.execute(statement).scalars().all()
 
 
 def update_repository(
-    session: Session, repository_id: int, **fields: object
+    session: Session, repository_id: int, *, workspace_id: str | None = None, **fields: object
 ) -> Repository | None:
     """Update arbitrary fields on a `Repository`.
 
@@ -188,7 +195,7 @@ def update_repository(
     Raises:
         SQLAlchemyError: If the update fails.
     """
-    repository = session.get(Repository, repository_id)
+    repository = get_repository(session, repository_id, workspace_id=workspace_id)
     if repository is None:
         logger.warning("Attempted to update nonexistent repository id=%s", repository_id)
         return None
@@ -220,6 +227,9 @@ def update_repository_indexing_status(
     total_chunks: int | None = None,
     total_embeddings: int | None = None,
     mark_indexed_now: bool = False,
+    workspace_id: str | None = None,
+    indexing_stage: str | None = None,
+    indexing_progress: int | None = None,
 ) -> Repository | None:
     """Update a repository's indexing status and related statistics.
 
@@ -240,7 +250,7 @@ def update_repository_indexing_status(
     Raises:
         SQLAlchemyError: If the update fails.
     """
-    repository = session.get(Repository, repository_id)
+    repository = get_repository(session, repository_id, workspace_id=workspace_id)
     if repository is None:
         logger.warning(
             "Attempted to update indexing status for nonexistent repository id=%s",
@@ -258,6 +268,18 @@ def update_repository_indexing_status(
     if mark_indexed_now:
         repository.last_indexed_at = _utcnow()
     repository.last_index_attempt_at = _utcnow()
+    if indexing_stage is not None:
+        repository.indexing_stage = indexing_stage
+    if indexing_progress is not None:
+        repository.indexing_progress = max(0, min(100, int(indexing_progress)))
+    normalized_status = str(getattr(indexing_status, "value", indexing_status))
+    if normalized_status == "indexing":
+        repository.indexing_heartbeat_at = _utcnow()
+        repository.indexing_started_at = repository.indexing_started_at or _utcnow()
+    if normalized_status == "ready":
+        repository.indexing_stage = "complete"
+        repository.indexing_progress = 100
+        repository.indexing_heartbeat_at = _utcnow()
     if hasattr(repository, "last_indexing_error"):
         repository.last_indexing_error = None
     repository.updated_at = _utcnow()
@@ -437,7 +459,7 @@ def get_file_by_path(
 
 
 def list_repository_files(
-    session: Session, repository_id: int, *, limit: int = 500, offset: int = 0
+    session: Session, repository_id: int, *, limit: int = 500, offset: int = 0, workspace_id: str | None = None
 ) -> Sequence[IndexedFile]:
     """List indexed files belonging to a repository.
 
@@ -451,12 +473,14 @@ def list_repository_files(
         A sequence of `IndexedFile` instances.
     """
     statement = (
-        select(IndexedFile)
+        select(IndexedFile).join(Repository, Repository.id == IndexedFile.repository_id)
         .where(IndexedFile.repository_id == repository_id)
         .order_by(IndexedFile.relative_path.asc())
         .limit(limit)
         .offset(offset)
     )
+    if workspace_id is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
     return session.execute(statement).scalars().all()
 
 
@@ -645,22 +669,27 @@ def delete_query_history(session: Session, query_id: int) -> bool:
     return True
 
 
-def count_repositories(session: Session) -> int:
+def count_repositories(session: Session, *, workspace_id: str | None = None) -> int:
     """Return the total number of registered repositories."""
-    return int(session.scalar(select(func.count()).select_from(Repository)) or 0)
+    statement = select(func.count()).select_from(Repository)
+    if workspace_id is not None:
+        statement = statement.where(Repository.workspace_id == workspace_id)
+    return int(session.scalar(statement) or 0)
 
 
-def count_repositories_by_status(session: Session, *, status: str) -> int:
+def count_repositories_by_status(session: Session, *, status: str, workspace_id: str | None = None) -> int:
     """Count repositories in one indexing status."""
     return int(
         session.scalar(
-            select(func.count()).select_from(Repository).where(Repository.indexing_status == status)
+            select(func.count()).select_from(Repository).where(Repository.indexing_status == status).where(
+                Repository.workspace_id == workspace_id if workspace_id is not None else True
+            )
         )
         or 0
     )
 
 
-def update_repository_status(session: Session, repository_id: int | str, status: str, **fields: object) -> Repository | None:
+def update_repository_status(session: Session, repository_id: int | str, status: str, *, workspace_id: str | None = None, **fields: object) -> Repository | None:
     """Compatibility wrapper for status updates from orchestration routes."""
     repository = update_repository_indexing_status(
         session,
@@ -669,7 +698,10 @@ def update_repository_status(session: Session, repository_id: int | str, status:
         total_files=fields.get("total_files"),
         total_chunks=fields.get("total_chunks"),
         total_embeddings=fields.get("total_embeddings"),
+        indexing_stage=fields.get("indexing_stage"),
+        indexing_progress=fields.get("indexing_progress"),
         mark_indexed_now=str(getattr(status, "value", status)) == "ready",
+        workspace_id=workspace_id,
     )
     if repository is not None and "error_message" in fields:
         repository.last_indexing_error = str(fields["error_message"])
@@ -679,10 +711,10 @@ def update_repository_status(session: Session, repository_id: int | str, status:
     return repository
 
 
-def replace_indexed_files(session: Session, repository_id: int | str, parsed_files: Sequence[object]) -> list[IndexedFile]:
+def replace_indexed_files(session: Session, repository_id: int | str, parsed_files: Sequence[object], *, workspace_id: str | None = None) -> list[IndexedFile]:
     """Replace file metadata for a repository after a successful parse."""
     repository_id = int(repository_id)
-    existing = list_repository_files(session, repository_id, limit=100_000)
+    existing = list_repository_files(session, repository_id, limit=100_000, workspace_id=workspace_id)
     for indexed_file in existing:
         session.delete(indexed_file)
     session.flush()

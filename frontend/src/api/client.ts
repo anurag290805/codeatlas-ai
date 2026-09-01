@@ -11,12 +11,12 @@ import { normalizeApiError } from "@/utils/errors";
  */
 export const apiClient: AxiosInstance = axios.create({
   baseURL: `${env.apiBaseUrl}${env.apiPrefix}` || env.apiPrefix,
-  timeout: 120000,
+  timeout: 30000,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
   },
-  withCredentials: false,
+  withCredentials: true,
 });
 
 /** System endpoints such as /health live outside the versioned API prefix. */

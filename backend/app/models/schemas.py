@@ -70,6 +70,11 @@ class RepositoryResponse(BaseModel):
     chunks_generated: int = Field(default=0, ge=0)
     embeddings_generated: int = Field(default=0, ge=0)
     last_indexed_at: datetime | None = None
+    indexing_stage: str = "queued"
+    indexing_progress: int = Field(default=0, ge=0, le=100)
+    indexing_started_at: datetime | None = None
+    indexing_heartbeat_at: datetime | None = None
+    last_indexing_error: str | None = None
 
     @field_validator("default_branch", mode="before")
     @classmethod

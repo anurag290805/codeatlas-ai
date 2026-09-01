@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RepositoryApi } from "@/api/repositories";
 import type { RepositoryCreateRequest } from "@/types/repository";
+import { ApiRequestError } from "@/utils/errors";
 
 /**
  * Fetches all repositories. Thin wrapper around TanStack Query —
@@ -12,6 +13,17 @@ export function useRepositories() {
   return useQuery({
     queryKey: ["repositories"],
     queryFn: () => RepositoryApi.getRepositories().then((response) => response.data),
+    staleTime: 10_000,
+    placeholderData: (previous) => previous,
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      return items.some((item) => ["pending", "indexing", "cloning", "parsing", "embedding"].includes(item.status)) ? 5_000 : false;
+    },
+    retry: (failureCount, error) => {
+      const status = error instanceof ApiRequestError ? error.status : undefined;
+      return failureCount < 3 && (status === undefined || status >= 500);
+    },
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 8_000),
   });
 }
 

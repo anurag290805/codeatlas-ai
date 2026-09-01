@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.graph_builder import GraphNotFoundError, NodeType, get_graph_service
+from app.core.auth import get_workspace_id
 from app.core.vector_store import CollectionNotFoundError, VectorStoreService
 from app.db import crud
 from app.db.database import get_db
@@ -83,10 +84,10 @@ class AnalyticsResponse(BaseModel):
     generatedAt: datetime
 
 
-def _repositories(db: Session, repository_id: str | None) -> list[Repository]:
+def _repositories(db: Session, repository_id: str | None, workspace_id: str) -> list[Repository]:
     if repository_id is None:
-        return list(crud.list_repositories(db, limit=100_000))
-    repository = crud.get_repository(db, repository_id)
+        return list(crud.list_repositories(db, limit=100_000, workspace_id=workspace_id))
+    repository = crud.get_repository(db, repository_id, workspace_id=workspace_id)
     if repository is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found.")
     return [repository]
@@ -158,7 +159,7 @@ def _build_analytics(
         total_symbols += symbols
         total_folders += folders
         try:
-            vector_count += vector_store.get_repository_stats(str(repository.id)).vector_count
+            vector_count += vector_store.get_repository_stats(str(repository.id), repository.workspace_id).vector_count
         except CollectionNotFoundError:
             pass
         activity, count = _commit_activity(repository)
@@ -213,9 +214,10 @@ def _build_analytics(
 def get_analytics(
     db: Session = Depends(get_db),
     vector_store: VectorStoreService = Depends(get_analytics_vector_store),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> AnalyticsResponse:
     """Return aggregate analytics across all repositories."""
-    return _build_analytics(_repositories(db, None), vector_store)
+    return _build_analytics(_repositories(db, None, workspace_id), vector_store)
 
 
 @router.get("/{repository_id}", response_model=AnalyticsResponse)
@@ -223,6 +225,7 @@ def get_repository_analytics(
     repository_id: str,
     db: Session = Depends(get_db),
     vector_store: VectorStoreService = Depends(get_analytics_vector_store),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> AnalyticsResponse:
     """Return analytics for one repository."""
-    return _build_analytics(_repositories(db, repository_id), vector_store)
+    return _build_analytics(_repositories(db, repository_id, workspace_id), vector_store)

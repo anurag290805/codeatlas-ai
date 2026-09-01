@@ -50,7 +50,7 @@ export function Repositories() {
 
       {repositoriesQuery.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading repositories…</div>
-      ) : repositoriesQuery.isError ? (
+      ) : repositoriesQuery.isError && repositories.length === 0 ? (
         <Card className="border-destructive/30"><CardContent className="p-5 text-sm text-destructive">Unable to load repositories. Try refreshing.</CardContent></Card>
       ) : repositories.length === 0 ? (
         <Card><CardHeader><CardTitle className="text-base">No repositories yet</CardTitle></CardHeader><CardContent className="pt-0"><p className="mb-4 text-sm text-muted-foreground">Import a GitHub repository to start indexing.</p><Button onClick={() => setIsDialogOpen(true)} className="gap-1.5"><Import className="h-4 w-4" /> Import repository</Button></CardContent></Card>

@@ -212,7 +212,7 @@ export function Dashboard() {
         />
       </div>
 
-      {repositoriesQuery.isError ? (
+      {repositoriesQuery.isError && repositories.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-sm text-destructive">
             Unable to load repositories. Please refresh and try again.

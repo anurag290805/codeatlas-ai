@@ -46,20 +46,17 @@ def test_failed_repository_import_is_retryable() -> None:
 
     with patch.object(routes_repo.crud, "get_repository_by_url", return_value=existing), patch.object(
         routes_repo.crud, "update_repository_status", return_value=updated
-    ):
+    ), patch.object(routes_repo, "enqueue_indexing_job", return_value=True) as enqueue:
         response = routes_repo.import_repository(
             schemas.RepositoryCreate(url="https://github.com/owner/repository"),
             background_tasks,
             db,
             git_manager,
-            parser,
-            embedding_service,
-            vector_store_service,
+            "workspace-a",
         )
 
     assert response.id == existing.id
-    background_tasks.add_task.assert_called_once()
-    assert background_tasks.add_task.call_args.kwargs["is_update"] is False
+    enqueue.assert_called_once_with(7, "https://github.com/owner/repository", is_update=False, workspace_id="workspace-a")
 
 
 def test_active_duplicate_repository_is_rejected() -> None:

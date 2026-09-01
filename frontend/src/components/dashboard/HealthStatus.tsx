@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, Loader2, Server } from "lucide-react";
-import { useQueryHealth } from "@/hooks/useHealth";
+import { useHealth, useQueryHealth } from "@/hooks/useHealth";
 import { cn } from "@/lib/utils";
 
 interface HealthStatusProps {
@@ -22,12 +22,13 @@ function Signal({ label, value, detail, state }: { label: string; value: string;
 
 export function HealthStatus({ className }: HealthStatusProps) {
   const query = useQueryHealth();
+  const liveness = useHealth();
   // The query health probe is the backend contract used by this panel. It is
   // fetched through apiClient, so it respects VITE_API_BASE_URL and
   // VITE_API_PREFIX (normally /api) in the deployed build.
   // A successful HTTP response proves the backend is reachable. The payload
   // status describes downstream AI readiness and is rendered separately.
-  const backendState = query.isSuccess ? "healthy" : "unavailable";
+  const backendState = liveness.isSuccess ? "healthy" : liveness.isError ? "unavailable" : "degraded";
   const queryState = query.isLoading ? "unavailable" : query.isError ? "unavailable" : query.data?.status === "healthy" ? "healthy" : "degraded";
   const queryMessage = query.isError ? "AI readiness could not be checked." : query.data?.message;
 
@@ -35,7 +36,7 @@ export function HealthStatus({ className }: HealthStatusProps) {
     <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between gap-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><Server className="h-5 w-5" /></div><div><h2 className="text-sm font-semibold">Platform health</h2><p className="text-xs text-muted-foreground">Backend liveness and AI readiness</p></div></div><StatusPill state={backendState} label={backendState === "healthy" ? "Backend online" : "Backend unavailable"} /></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Signal label="Backend" value={backendState === "healthy" ? "Online" : "Unavailable"} state={backendState} />
+        <Signal label="Backend" value={backendState === "healthy" ? "Online" : backendState === "degraded" ? "Waking up…" : "Unavailable"} state={backendState} />
         <Signal label="AI query" value={queryState === "healthy" ? "Ready" : queryState === "degraded" ? "Degraded" : "Unavailable"} detail={queryMessage} state={queryState} />
         <Signal label="Gemini" value={query.data?.provider_reachable ? "Reachable" : "Unavailable"} state={query.data?.provider_reachable ? "healthy" : "unavailable"} />
         <Signal label="Model" value={query.data?.llm_model ?? "Checking…"} detail={query.data?.model_available ? "Available" : "Not verified"} state={query.data?.model_available ? "healthy" : "degraded"} />

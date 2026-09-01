@@ -88,6 +88,7 @@ class RetrievalQuery:
     similarity_threshold: float | None = None
     token_budget: int | None = None
     filters: RetrievalFilters | None = None
+    workspace_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -287,6 +288,7 @@ class SearchPipeline:
                 query_vector=query_vector,
                 top_k=candidate_pool_size,
                 filters=search_filters,
+                workspace_id=query.workspace_id,
             )
         except CollectionNotFoundError as exc:
             raise RepositoryNotIndexedError(

@@ -21,11 +21,14 @@ from pathlib import Path
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.embeddings import EmbeddingGenerationError, EmbeddingService
+from app.core.auth import get_workspace_id
 from app.core.git_handler import GitRepositoryManager, RepositoryOperationError
 from app.core.graph_builder import get_graph_service
+from app.core.indexing_queue import enqueue_indexing_job
 from app.core.parser import RepositoryParseError, RepositoryParser
 from app.core.vector_store import VectorStoreError, VectorStoreService
 from app.db import crud
@@ -93,6 +96,7 @@ def _run_indexing_pipeline(
     parser: RepositoryParser,
     embedding_service: EmbeddingService,
     vector_store_service: VectorStoreService,
+    workspace_id: str,
 ) -> None:
     """
     Execute the full repository indexing pipeline: clone/update, parse,
@@ -107,9 +111,7 @@ def _run_indexing_pipeline(
     staged_clone: Path | None = None
     try:
         repository_numeric_id = int(repository_id)
-        crud.update_repository_status(
-            db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
-        )
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING, workspace_id=workspace_id, indexing_stage="cloning", indexing_progress=5)
         identity = git_manager.validate_repository_url(clone_url)
         if is_update:
             logger.info("Indexing stage started repository_id=%s stage=update", repository_id)
@@ -125,6 +127,7 @@ def _run_indexing_pipeline(
 
         logger.info("Indexing stage started repository_id=%s stage=parse", repository_id)
         logger.info("Indexing stage started repository_id=%s stage=parsing", repository_id)
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING, workspace_id=workspace_id, indexing_stage="parsing", indexing_progress=25)
         parse_result = parser.parse_repository(repository_numeric_id, local_path)
 
         logger.info("Indexing stage started repository_id=%s stage=graph", repository_id)
@@ -132,6 +135,7 @@ def _run_indexing_pipeline(
         graph = graph_service.build_staged_graph(parse_result)
 
         logger.info("Indexing stage started repository_id=%s stage=embedding", repository_id)
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING, workspace_id=workspace_id, indexing_stage="embedding", indexing_progress=55)
         chunks = parse_result.chunks
         embeddings = embedding_service.generate_embeddings(chunks, repository_id=repository_id)
         embedding_items = list(getattr(embeddings, "embeddings", embeddings) or [])
@@ -143,12 +147,13 @@ def _run_indexing_pipeline(
         )
 
         logger.info("Indexing stage started repository_id=%s stage=metadata", repository_id)
+        crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING, workspace_id=workspace_id, indexing_stage="storing", indexing_progress=85)
         staged_collection = vector_store_service.stage_embeddings(
-            repository_id, list(getattr(embeddings, "embeddings", embeddings) or [])
+            repository_id, list(getattr(embeddings, "embeddings", embeddings) or []), workspace_id
         )
 
         logger.info("Indexing stage started repository_id=%s stage=commit", repository_id)
-        vector_store_service.publish_staged_collection(repository_id, staged_collection)
+        vector_store_service.publish_staged_collection(repository_id, staged_collection, workspace_id)
         graph_service.publish_graph(graph)
         promoted_path = (
             local_path
@@ -156,15 +161,15 @@ def _run_indexing_pipeline(
             else git_manager.promote_repository_clone(identity, local_path)
         )
         crud.update_repository(
-            db, repository_numeric_id, local_path=str(promoted_path),
+            db, repository_numeric_id, workspace_id=workspace_id, local_path=str(promoted_path),
             default_branch=metadata.default_branch or "main",
             current_commit_hash=metadata.current_commit_hash or None,
         )
-        crud.replace_indexed_files(db, repository_id=repository_id, parsed_files=parse_result.files)
+        crud.replace_indexed_files(db, repository_id=repository_id, parsed_files=parse_result.files, workspace_id=workspace_id)
         crud.update_repository_status(
             db, repository_id=repository_id, status=schemas.RepositoryStatus.READY,
             total_files=len(parse_result.files), total_chunks=len(chunks),
-            total_embeddings=len(embedding_items),
+            total_embeddings=len(embedding_items), workspace_id=workspace_id,
         )
         graph_stats = graph.statistics()
         logger.info(
@@ -175,15 +180,15 @@ def _run_indexing_pipeline(
         )
 
     except RepositoryOperationError as exc:
-        _mark_indexing_failed(db, repository_id, "git", exc, vector_store_service, staged_collection, staged_clone)
+        _mark_indexing_failed(db, repository_id, "git", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
     except RepositoryParseError as exc:
-        _mark_indexing_failed(db, repository_id, "parser", exc, vector_store_service, staged_collection, staged_clone)
+        _mark_indexing_failed(db, repository_id, "parser", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
     except EmbeddingGenerationError as exc:
-        _mark_indexing_failed(db, repository_id, "embedding", exc, vector_store_service, staged_collection, staged_clone)
+        _mark_indexing_failed(db, repository_id, "embedding", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
     except VectorStoreError as exc:
-        _mark_indexing_failed(db, repository_id, "vector_store", exc, vector_store_service, staged_collection, staged_clone)
+        _mark_indexing_failed(db, repository_id, "vector_store", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
     except Exception as exc:  # noqa: BLE001 - final safety net for a background task
-        _mark_indexing_failed(db, repository_id, "unknown", exc, vector_store_service, staged_collection, staged_clone)
+        _mark_indexing_failed(db, repository_id, "unknown", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
 
 
 def _mark_indexing_failed(
@@ -194,6 +199,7 @@ def _mark_indexing_failed(
     vector_store_service: VectorStoreService | None = None,
     staged_collection: str | None = None,
     staged_clone: Path | None = None,
+    workspace_id: str | None = None,
 ) -> None:
     """Record failure and remove only artifacts from this indexing attempt."""
     logger.exception("Indexing failed repository_id=%s stage=%s error=%s", repository_id, stage, exc)
@@ -212,7 +218,7 @@ def _mark_indexing_failed(
             shutil.rmtree(staged_clone, ignore_errors=True)
         except Exception:
             logger.exception("Indexing rollback failed repository_id=%s stage=clone_cleanup", repository_id)
-    previous = crud.get_repository(db, repository_id)
+    previous = crud.get_repository(db, repository_id, workspace_id=workspace_id) if workspace_id else crud.get_repository(db, repository_id)
     had_usable_index = bool(previous and (previous.total_embeddings or previous.total_chunks or previous.total_files))
     failure_status = schemas.RepositoryStatus.INDEX_FAILED if had_usable_index else schemas.RepositoryStatus.FAILED_IMPORT
     crud.update_repository_status(
@@ -220,6 +226,7 @@ def _mark_indexing_failed(
         repository_id=repository_id,
         status=failure_status,
         error_message=f"Indexing failed at stage '{stage}': {exc}",
+        workspace_id=workspace_id,
     )
 
 
@@ -244,17 +251,15 @@ def import_repository(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     git_manager: GitRepositoryManager = Depends(get_git_repository_manager),
-    parser: RepositoryParser = Depends(get_repository_parser),
-    embedding_service: EmbeddingService = Depends(get_embedding_service),
-    vector_store_service: VectorStoreService = Depends(get_vector_store_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryResponse:
     """Register a repository for indexing and schedule the indexing pipeline."""
     identity = git_manager.validate_repository_url(str(payload.url))
     canonical_url = identity.canonical_url
-    existing = crud.get_repository_by_url(db, repository_url=canonical_url)
+    existing = crud.get_repository_by_url(db, repository_url=canonical_url, workspace_id=workspace_id)
     if existing is None and str(payload.url) != canonical_url:
         # Accept legacy rows created before URL canonicalization was added.
-        existing = crud.get_repository_by_url(db, repository_url=str(payload.url))
+        existing = crud.get_repository_by_url(db, repository_url=str(payload.url), workspace_id=workspace_id)
     if existing is not None:
         retryable_statuses = {
             schemas.RepositoryStatus.FAILED.value,
@@ -273,31 +278,29 @@ def import_repository(
             total_files=existing.files_indexed,
             total_chunks=existing.chunks_generated,
             total_embeddings=existing.embeddings_generated,
+            workspace_id=workspace_id,
         )
         if repository is None:
             raise HTTPException(status_code=404, detail=f"Repository not found: {existing.id}")
         logger.info("Retrying failed repository import repository_id=%s url=%s", repository.id, canonical_url)
     else:
-        repository = crud.create_repository(
-            db,
-            repository_name=identity.full_name,
-            repository_url=canonical_url,
-            default_branch=payload.branch or "main",
-        )
+        try:
+            repository = crud.create_repository(db, repository_name=identity.full_name, repository_url=canonical_url, default_branch=payload.branch or "main", workspace_id=workspace_id)
+        except IntegrityError as exc:
+            existing = crud.get_repository_by_url(db, canonical_url, workspace_id=workspace_id)
+            if existing is not None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Repository already registered: {canonical_url}") from exc
+            raise
 
     logger.info("Repository import scheduled repository_id=%s url=%s", repository.id, canonical_url)
 
-    background_tasks.add_task(
-        _run_indexing_pipeline,
-        repository_id=repository.id,
-        clone_url=canonical_url,
-        is_update=False,
-        db=db,
-        git_manager=git_manager,
-        parser=parser,
-        embedding_service=embedding_service,
-        vector_store_service=vector_store_service,
-    )
+    queued = enqueue_indexing_job(repository.id, canonical_url, is_update=False, workspace_id=workspace_id)
+    if not queued:
+        repository = crud.update_repository_status(
+            db, repository.id, schemas.RepositoryStatus.FAILED_IMPORT,
+            workspace_id=workspace_id, indexing_stage="queue_full", indexing_progress=0,
+            error_message="Indexing queue is full; retry this import shortly.",
+        ) or repository
 
     return schemas.RepositoryResponse.model_validate(repository)
 
@@ -312,10 +315,11 @@ def list_repositories(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryListResponse:
     """Return a paginated collection of registered repositories."""
-    repositories = crud.list_repositories(db, skip=skip, limit=limit)
-    total = crud.count_repositories(db)
+    repositories = crud.list_repositories(db, skip=skip, limit=limit, workspace_id=workspace_id)
+    total = crud.count_repositories(db, workspace_id=workspace_id)
     return schemas.RepositoryListResponse(
         items=[schemas.RepositoryResponse.model_validate(repo) for repo in repositories],
         total=total,
@@ -333,9 +337,10 @@ def list_repositories(
 def get_repository(
     repository_id: str,
     db: Session = Depends(get_db),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryResponse:
     """Retrieve a single repository by identifier."""
-    repository = _get_repository_or_404(db, repository_id)
+    repository = _get_repository_or_404(db, repository_id, workspace_id)
     return schemas.RepositoryResponse.model_validate(repository)
 
 
@@ -348,9 +353,10 @@ def get_repository(
 def get_repository_status(
     repository_id: str,
     db: Session = Depends(get_db),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryStatusResponse:
     """Retrieve the current indexing status for a repository."""
-    repository = _get_repository_or_404(db, repository_id)
+    repository = _get_repository_or_404(db, repository_id, workspace_id)
     return schemas.RepositoryStatusResponse.model_validate(repository)
 
 
@@ -372,25 +378,17 @@ def reindex_repository(
     parser: RepositoryParser = Depends(get_repository_parser),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
     vector_store_service: VectorStoreService = Depends(get_vector_store_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryResponse:
     """Schedule a full re-index of an already registered repository."""
-    repository = _get_repository_or_404(db, repository_id)
+    repository = _get_repository_or_404(db, repository_id, workspace_id)
     crud.update_repository_status(
-        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
+        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING, workspace_id=workspace_id
     )
     logger.info("Repository reindex requested repository_id=%s", repository_id)
 
-    background_tasks.add_task(
-        _run_indexing_pipeline,
-        repository_id=repository_id,
-        clone_url=repository.url,
-        is_update=False,
-        db=db,
-        git_manager=git_manager,
-        parser=parser,
-        embedding_service=embedding_service,
-        vector_store_service=vector_store_service,
-    )
+    if not enqueue_indexing_job(repository_id, repository.url, is_update=False, workspace_id=workspace_id):
+        crud.update_repository_status(db, repository_id, schemas.RepositoryStatus.INDEX_FAILED, workspace_id=workspace_id, indexing_stage="queue_full", error_message="Indexing queue is full; retry shortly.")
 
     return schemas.RepositoryResponse.model_validate(repository)
 
@@ -413,25 +411,17 @@ def update_repository(
     parser: RepositoryParser = Depends(get_repository_parser),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
     vector_store_service: VectorStoreService = Depends(get_vector_store_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryResponse:
     """Schedule a git pull followed by a full re-index of the repository."""
-    repository = _get_repository_or_404(db, repository_id)
+    repository = _get_repository_or_404(db, repository_id, workspace_id)
     crud.update_repository_status(
-        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING
+        db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING, workspace_id=workspace_id
     )
     logger.info("Repository update requested repository_id=%s", repository_id)
 
-    background_tasks.add_task(
-        _run_indexing_pipeline,
-        repository_id=repository_id,
-        clone_url=repository.url,
-        is_update=True,
-        db=db,
-        git_manager=git_manager,
-        parser=parser,
-        embedding_service=embedding_service,
-        vector_store_service=vector_store_service,
-    )
+    if not enqueue_indexing_job(repository_id, repository.url, is_update=True, workspace_id=workspace_id):
+        crud.update_repository_status(db, repository_id, schemas.RepositoryStatus.INDEX_FAILED, workspace_id=workspace_id, indexing_stage="queue_full", error_message="Indexing queue is full; retry shortly.")
 
     return schemas.RepositoryResponse.model_validate(repository)
 
@@ -451,11 +441,12 @@ def delete_repository(
     db: Session = Depends(get_db),
     git_manager: GitRepositoryManager = Depends(get_git_repository_manager),
     vector_store_service: VectorStoreService = Depends(get_vector_store_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> None:
     """Delete a repository and all associated indexed data."""
-    repository = _get_repository_or_404(db, repository_id)
+    repository = _get_repository_or_404(db, repository_id, workspace_id)
     repository_numeric_id = int(repository.id)
-    crud.update_repository_status(db, repository_id=repository_numeric_id, status=schemas.RepositoryStatus.DELETING)
+    crud.update_repository_status(db, repository_id=repository_numeric_id, status=schemas.RepositoryStatus.DELETING, workspace_id=workspace_id)
 
     try:
         identity = git_manager.validate_repository_url(repository.url)
@@ -465,7 +456,7 @@ def delete_repository(
         raise HTTPException(status_code=502, detail="Failed to remove repository clone. Please retry.") from exc
 
     try:
-        vector_store_service.delete_repository_embeddings(repository_id)
+        vector_store_service.delete_repository_embeddings(repository_id, workspace_id)
     except VectorStoreError as exc:
         logger.exception("Vector store deletion failed repository_id=%s", repository_id)
         raise HTTPException(status_code=502, detail="Failed to remove repository vectors. Please retry.") from exc
@@ -484,13 +475,15 @@ def delete_repository(
 )
 def repository_health_check(
     db: Session = Depends(get_db),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryHealthResponse:
     """Return aggregate repository counts grouped by indexing status."""
     return schemas.RepositoryHealthResponse(
-        total_repositories=crud.count_repositories(db),
-        indexed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.READY.value),
-        failed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.INDEX_FAILED.value),
-        pending=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.INDEXING.value),
+        total_repositories=crud.count_repositories(db, workspace_id=workspace_id),
+        indexed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.READY.value, workspace_id=workspace_id),
+        failed=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.INDEX_FAILED.value, workspace_id=workspace_id),
+        pending=crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.INDEXING.value, workspace_id=workspace_id)
+        + crud.count_repositories_by_status(db, status=schemas.RepositoryStatus.PENDING.value, workspace_id=workspace_id),
     )
 
 @router.get(
@@ -501,11 +494,12 @@ def repository_health_check(
 def list_repository_files(
     repository_id: int,
     db: Session = Depends(get_db),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryFilesResponse:
     """
     Return all indexed files belonging to a repository.
     """
-    repository = crud.get_repository(db, repository_id=repository_id)
+    repository = crud.get_repository(db, repository_id=repository_id, workspace_id=workspace_id)
 
     if repository is None:
         raise HTTPException(
@@ -513,7 +507,7 @@ def list_repository_files(
             detail=f"Repository not found: {repository_id}",
         )
 
-    files = crud.list_repository_files(db, repository_id)
+    files = crud.list_repository_files(db, repository_id, workspace_id=workspace_id)
 
     return schemas.RepositoryFilesResponse(
         files=[
@@ -541,11 +535,12 @@ def get_repository_file_content(
     path: str = Query(..., description="Relative path to the file within the repository."),
     db: Session = Depends(get_db),
     git_manager: GitRepositoryManager = Depends(get_git_repository_manager),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.RepositoryFileContentResponse:
     """
     Return the content of a specific file from a cloned repository.
     """
-    repository = crud.get_repository(db, repository_id=repository_id)
+    repository = crud.get_repository(db, repository_id=repository_id, workspace_id=workspace_id)
     if repository is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -663,9 +658,9 @@ def _language_value(language: object) -> str:
     return text.rsplit(".", 1)[-1].lower()
 
 
-def _get_repository_or_404(db: Session, repository_id: str) -> Repository:
+def _get_repository_or_404(db: Session, repository_id: str, workspace_id: str | None = None) -> Repository:
     """Fetch a repository by identifier or raise a 404 HTTPException."""
-    repository = crud.get_repository(db, repository_id=repository_id)
+    repository = crud.get_repository(db, repository_id=repository_id, workspace_id=workspace_id)
     if repository is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

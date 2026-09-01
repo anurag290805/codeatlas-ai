@@ -28,6 +28,8 @@ from app.api.routes_analytics import router as analytics_router
 from app.api.routes_query import router as query_router
 from app.api.routes_repo import router as repo_router
 from app.config import get_settings
+from app.core.auth import WORKSPACE_COOKIE, ensure_workspace_cookie, workspace_cookie_value
+from app.core.indexing_queue import recover_indexing_jobs
 from app.db.database import close_db, init_db
 from app.utils.logger import get_logger
 
@@ -57,6 +59,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     try:
         init_db()
+        recover_indexing_jobs()
         logger.info("Database initialized")
     except Exception:
         logger.exception("Database initialization failed")
@@ -125,6 +128,18 @@ async def _request_context_middleware(request: Request, call_next):
     start_time = time.monotonic()
 
     response = await call_next(request)
+
+    workspace_id = ensure_workspace_cookie(request)
+    if not request.cookies.get(WORKSPACE_COOKIE) or getattr(request.state, "workspace_cookie_value", None):
+        response.set_cookie(
+            WORKSPACE_COOKIE,
+            getattr(request.state, "workspace_cookie_value", workspace_cookie_value(workspace_id)),
+            httponly=True,
+            secure=get_settings().environment in {"production", "staging"},
+            samesite="lax",
+            max_age=60 * 60 * 24 * 365,
+            path="/",
+        )
 
     duration_ms = (time.monotonic() - start_time) * 1000
     response.headers["X-Request-ID"] = correlation_id

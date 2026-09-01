@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     )
     cors_allow_credentials: bool = True
     trusted_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    session_secret: str = Field(default="", validation_alias=AliasChoices("SESSION_SECRET", "CODEATLAS_SESSION_SECRET"))
 
     # Database
     database_url: str = Field(
@@ -168,6 +169,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "cors_allowed_origins cannot contain '*' when credentials are enabled"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_session_secret(self) -> "Settings":
+        if not self.session_secret:
+            if self.environment in {"production", "staging"}:
+                raise ValueError("SESSION_SECRET must be configured outside development")
+            object.__setattr__(self, "session_secret", "development-only-codeatlas-session-secret")
+        if len(self.session_secret) < 32:
+            raise ValueError("SESSION_SECRET must contain at least 32 characters")
         return self
 
     # Compatibility properties for existing modules using the old names.

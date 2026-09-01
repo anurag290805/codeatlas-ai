@@ -38,6 +38,7 @@ from app.core.llm import (
     LLMTimeoutError,
     ResponseFormat,
 )
+from app.core.auth import get_workspace_id
 from app.core.retriever import (
     RepositoryNotIndexedError,
     RetrievalError,
@@ -90,6 +91,7 @@ async def query_repository(
     db: Session = Depends(get_db),
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.QueryResponse:
     """Answer a natural-language question about a repository using RAG."""
     return await _answer_query(
@@ -98,7 +100,7 @@ async def query_repository(
         top_k=payload.top_k,
         db=db,
         retriever=retriever,
-        llm_service=llm_service,
+        llm_service=llm_service, workspace_id=workspace_id,
     )
 
 
@@ -118,6 +120,7 @@ async def query_specific_repository(
     db: Session = Depends(get_db),
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> schemas.QueryResponse:
     """Answer a natural-language question scoped to a single repository."""
     return await _answer_query(
@@ -126,7 +129,7 @@ async def query_specific_repository(
         top_k=payload.top_k,
         db=db,
         retriever=retriever,
-        llm_service=llm_service,
+        llm_service=llm_service, workspace_id=workspace_id,
     )
 
 
@@ -144,14 +147,15 @@ async def query_repository_stream(
     db: Session = Depends(get_db),
     retriever: RetrieverService = Depends(get_retriever_service),
     llm_service: LLMService = Depends(get_llm_service),
+    workspace_id: str = Depends(get_workspace_id),
 ) -> StreamingResponse:
     """Answer a natural-language question about a repository, streaming the response."""
-    _ensure_repository_ready(db, payload.repository_id)
+    _ensure_repository_ready(db, payload.repository_id, workspace_id)
 
     logger.info("Query received repository_id=%s streaming=true", payload.repository_id)
 
     retrieval_result = await _retrieve(
-        retriever, payload.repository_id, payload.query, payload.top_k
+        retriever, payload.repository_id, payload.query, payload.top_k, workspace_id
     )
 
     logger.info(
@@ -216,17 +220,18 @@ async def _answer_query(
     db: Session,
     retriever: RetrieverService,
     llm_service: LLMService,
+    workspace_id: str,
 ) -> schemas.QueryResponse:
     """
     Execute the full non-streaming query pipeline: validate repository
     readiness, retrieve context, generate a grounded answer, and shape
     the response.
     """
-    _ensure_repository_ready(db, repository_id)
+    _ensure_repository_ready(db, repository_id, workspace_id)
 
     logger.info("Query received repository_id=%s streaming=false", repository_id)
 
-    retrieval_result = await _retrieve(retriever, repository_id, query, top_k)
+    retrieval_result = await _retrieve(retriever, repository_id, query, top_k, workspace_id)
 
     logger.info(
         "Retrieval completed repository_id=%s chunks=%d",
@@ -281,6 +286,7 @@ async def _retrieve(
     repository_id: str,
     query: str,
     top_k: Optional[int],
+    workspace_id: str | None = None,
 ):
     """Run retrieval on a worker thread and translate failures into HTTPExceptions."""
     try:
@@ -288,6 +294,7 @@ async def _retrieve(
             text=query,
             repository_id=str(repository_id),
             top_k=top_k,
+            workspace_id=workspace_id,
         )
         return await run_in_threadpool(retriever.retrieve, retrieval_query)
     except RepositoryNotIndexedError as exc:
@@ -392,7 +399,7 @@ async def _stream_answer_events(
         yield f"event: error\ndata: {json.dumps(error_payload)}\n\n"
 
 
-def _ensure_repository_ready(db: Session, repository_id: str) -> None:
+def _ensure_repository_ready(db: Session, repository_id: str, workspace_id: str | None = None) -> None:
     """
     Validate that a repository exists and has completed indexing before
     a query is attempted.
@@ -401,7 +408,7 @@ def _ensure_repository_ready(db: Session, repository_id: str) -> None:
         HTTPException: 404 if the repository does not exist, 409 if it
             exists but has not finished indexing.
     """
-    repository = crud.get_repository(db, repository_id=repository_id)
+    repository = crud.get_repository(db, repository_id=repository_id, workspace_id=workspace_id)
     if repository is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
