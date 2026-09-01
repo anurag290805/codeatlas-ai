@@ -16,10 +16,12 @@ from app.config import get_settings
 
 WORKSPACE_COOKIE = "codeatlas_workspace"
 _SEPARATOR = "."
+_DEVELOPMENT_KEY = secrets.token_bytes(32)
 
 
 def _signature(workspace_id: str) -> str:
-    secret = get_settings().session_secret.encode("utf-8")
+    configured = get_settings().workspace_session_secret
+    secret = configured.encode("utf-8") if configured else _DEVELOPMENT_KEY
     return hmac.new(secret, workspace_id.encode("utf-8"), hashlib.sha256).hexdigest()
 
 

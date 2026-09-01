@@ -26,6 +26,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
         validate_default=True,
+        populate_by_name=True,
     )
 
     # Application
@@ -44,7 +45,11 @@ class Settings(BaseSettings):
     )
     cors_allow_credentials: bool = True
     trusted_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
-    session_secret: str = Field(default="", validation_alias=AliasChoices("SESSION_SECRET", "CODEATLAS_SESSION_SECRET"))
+    workspace_session_secret: str | None = Field(
+        default=None,
+        min_length=32,
+        validation_alias=AliasChoices("WORKSPACE_SESSION_SECRET"),
+    )
 
     # Database
     database_url: str = Field(
@@ -115,6 +120,12 @@ class Settings(BaseSettings):
             raise ValueError("log_level must be DEBUG, INFO, WARNING, ERROR, or CRITICAL")
         return normalized
 
+    @field_validator("workspace_session_secret", mode="before")
+    @classmethod
+    def normalize_workspace_session_secret(cls, value: object) -> object:
+        """Trim the canonical signing secret without accepting an alias."""
+        return value.strip() if isinstance(value, str) else value
+
     @field_validator("api_prefix", mode="before")
     @classmethod
     def normalize_api_prefix(cls, value: str) -> str:
@@ -172,13 +183,12 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_session_secret(self) -> "Settings":
-        if not self.session_secret:
-            if self.environment in {"production", "staging"}:
-                raise ValueError("SESSION_SECRET must be configured outside development")
-            object.__setattr__(self, "session_secret", "development-only-codeatlas-session-secret")
-        if len(self.session_secret) < 32:
-            raise ValueError("SESSION_SECRET must contain at least 32 characters")
+    def validate_workspace_session_secret(self) -> "Settings":
+        """Require the canonical secret whenever cookies are persistent."""
+        if self.environment not in {"development", "dev", "test"} and not self.workspace_session_secret:
+            raise ValueError(
+                "WORKSPACE_SESSION_SECRET must be configured outside development"
+        )
         return self
 
     # Compatibility properties for existing modules using the old names.

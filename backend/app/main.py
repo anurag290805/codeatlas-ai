@@ -135,7 +135,7 @@ async def _request_context_middleware(request: Request, call_next):
             WORKSPACE_COOKIE,
             getattr(request.state, "workspace_cookie_value", workspace_cookie_value(workspace_id)),
             httponly=True,
-            secure=get_settings().environment in {"production", "staging"},
+                secure=getattr(get_settings(), "environment", "development") in {"production", "staging"},
             samesite="lax",
             max_age=60 * 60 * 24 * 365,
             path="/",

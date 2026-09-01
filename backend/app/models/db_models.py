@@ -57,7 +57,7 @@ class Repository(Base):
 
     # Browser workspace/account identity. Null legacy rows are intentionally
     # not visible to new workspaces until explicitly claimed by migration.
-    workspace_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    workspace_id: Mapped[str | None] = mapped_column(String(128), ForeignKey("workspaces.id"), nullable=True, index=True)
     # Retained for compatibility with earlier deployments.
     owner_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_private: Mapped[bool] = mapped_column(default=False, nullable=False)
@@ -88,6 +88,7 @@ class Repository(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    workspace: Mapped["Workspace | None"] = relationship(back_populates="repositories")
     query_history: Mapped[list["QueryHistory"]] = relationship(
         back_populates="repository",
         cascade="all, delete-orphan",
@@ -120,6 +121,16 @@ class Repository(Base):
     @property
     def repository_id(self) -> int:
         return self.id
+
+
+class Workspace(Base):
+    """Opaque browser workspace used to isolate repository data."""
+
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    repositories: Mapped[list[Repository]] = relationship(back_populates="workspace")
 
 
 class IndexedFile(Base):

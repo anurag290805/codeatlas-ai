@@ -59,6 +59,34 @@ def test_sqlite_database_url_remains_local_development_default() -> None:
     assert settings.DATABASE_URL.endswith("/data/app.db")
 
 
+def test_production_settings_load_with_canonical_workspace_secret(monkeypatch) -> None:
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.setenv("WORKSPACE_SESSION_SECRET", "w" * 32)
+    settings = Settings(
+        _env_file=None,
+        environment="production",
+    )
+    assert settings.workspace_session_secret == "w" * 32
+
+
+def test_production_settings_requires_canonical_workspace_secret(monkeypatch) -> None:
+    import pytest
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+
+    with pytest.raises(ValueError, match="WORKSPACE_SESSION_SECRET must be configured"):
+        Settings(_env_file=None, environment="production")
+
+
+def test_production_settings_does_not_require_legacy_session_secret(monkeypatch) -> None:
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    settings = Settings(
+        _env_file=None,
+        environment="production",
+        WORKSPACE_SESSION_SECRET="c" * 32,
+    )
+    assert settings.workspace_session_secret == "c" * 32
+
+
 def test_configured_cors_origin_allows_request_and_preflight(monkeypatch) -> None:
     settings = SimpleNamespace(
         cors_allowed_origins=["http://localhost:4173"],

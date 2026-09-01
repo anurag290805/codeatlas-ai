@@ -9,6 +9,12 @@ from app.core.vector_store import VectorStoreService
 from app.db import crud
 from app.models.db_models import Repository
 from app.db.database import Base
+from app.core.workspace import _decode, _set_cookie, _sign, _workspace_context
+from app.core.config import Settings
+import app.core.workspace as workspace
+import time
+from fastapi import Response
+from starlette.requests import Request
 
 
 def _session() -> Session:
@@ -42,6 +48,30 @@ def test_legacy_unassigned_rows_are_not_visible_to_any_workspace() -> None:
     db.commit()
     assert crud.list_repositories(db, workspace_id="new-workspace") == []
     assert crud.get_repository(db, legacy.id, workspace_id="new-workspace") is None
+
+
+def test_workspace_cookie_signing_uses_canonical_settings_secret(monkeypatch) -> None:
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    configured = Settings(_env_file=None, environment="production", workspace_session_secret="s" * 32)
+    monkeypatch.setattr(workspace, "get_settings", lambda: configured)
+    issued_at = int(time.time())
+    signed = _sign("e" * 32, issued_at)
+    assert signed
+    assert workspace._decode(f"{'e' * 32}.{issued_at}.{signed}") == "e" * 32
+
+    other = Settings(_env_file=None, environment="production", workspace_session_secret="t" * 32)
+    monkeypatch.setattr(workspace, "get_settings", lambda: other)
+    assert workspace._decode(f"{'e' * 32}.{issued_at}.{signed}") is None
+
+
+def test_workspace_cookie_attributes_remain_intact(monkeypatch) -> None:
+    configured = Settings(_env_file=None, environment="production", workspace_session_secret="s" * 32)
+    monkeypatch.setattr(workspace, "get_settings", lambda: configured)
+    request = Request({"type": "http", "scheme": "https", "path": "/", "headers": [], "query_string": b""})
+    response = Response()
+    _set_cookie(response, "f" * 32, request)
+    header = response.headers["set-cookie"]
+    assert "HttpOnly" in header and "Secure" in header and "SameSite=none" in header
 
 
 def test_vector_collection_names_are_workspace_isolated() -> None:
