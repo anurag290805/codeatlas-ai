@@ -180,7 +180,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               )}
               aria-hidden="true"
             />
-            Local backend
+            {version.data?.environment === "production" ? "Production backend" : version.data?.environment === "staging" ? "Staging backend" : "Local backend"}
             <span className="ml-auto font-mono">{backendVersion}</span>
           </div>
         </div>

@@ -64,8 +64,8 @@ class Settings(BaseSettings):
     gemini_temperature: Annotated[float, Field(ge=0, le=2)] = 0.0
     gemini_max_tokens: Annotated[int, Field(gt=0)] = 512
 
-    # Active LLM provider. OmniRoute is local and therefore the zero-cost default.
-    llm_provider: str = Field(default="omniroute", min_length=1)
+    # Active LLM provider. Gemini is the default for production deployments.
+    llm_provider: str = Field(default="gemini", min_length=1)
 
     # OmniRoute (OpenAI-compatible local gateway)
     omniroute_base_url: str = Field(
