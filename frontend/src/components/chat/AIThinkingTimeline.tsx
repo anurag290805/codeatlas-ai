@@ -64,7 +64,7 @@ export const AIThinkingTimeline: FC<AIThinkingTimelineProps> = ({ stage, stats, 
                 className={cn(
                   "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
                   isDone && "text-emerald-400",
-                  isActive && "text-violet-300",
+                  isActive && "text-primary",
                   isPending && "text-muted-foreground",
                 )}
               >

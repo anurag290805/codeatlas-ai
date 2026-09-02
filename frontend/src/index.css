@@ -42,10 +42,10 @@
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+    --radius-xl: calc(var(--radius) * 1.2);
+    --radius-2xl: calc(var(--radius) * 1.5);
+    --radius-3xl: calc(var(--radius) * 1.8);
+    --radius-4xl: calc(var(--radius) * 2.2);
 }
 
 :root {
@@ -167,9 +167,9 @@
     }
   .colourful body {
     background-image:
-      radial-gradient(circle at 8% 0%, color-mix(in oklab, var(--chart-2) 18%, transparent), transparent 30rem),
-      radial-gradient(circle at 92% 8%, color-mix(in oklab, var(--chart-5) 16%, transparent), transparent 26rem),
-      radial-gradient(circle at 55% 100%, color-mix(in oklab, var(--chart-1) 12%, transparent), transparent 34rem);
+      radial-gradient(circle at 8% 0%, color-mix(in oklab, var(--chart-2) 10%, transparent), transparent 30rem),
+      radial-gradient(circle at 92% 8%, color-mix(in oklab, var(--chart-5) 8%, transparent), transparent 26rem),
+      radial-gradient(circle at 55% 100%, color-mix(in oklab, var(--chart-1) 6%, transparent), transparent 34rem);
     }
   html {
     @apply font-sans;
@@ -178,14 +178,10 @@
 
 @layer components {
   .colourful [data-slot="card"] {
-    --card-surface: var(--surface-blue);
-    background-color: var(--card-surface) !important;
+    /* A soft, uniform tint for all surfaces — free of the previous
+       per-card colour cycling that fought the information hierarchy. */
+    background-color: color-mix(in oklab, var(--surface-blue) 55%, var(--card));
   }
-
-  .colourful [data-slot="card"]:nth-of-type(5n + 2) { --card-surface: var(--surface-lavender); }
-  .colourful [data-slot="card"]:nth-of-type(5n + 3) { --card-surface: var(--surface-mint); }
-  .colourful [data-slot="card"]:nth-of-type(5n + 4) { --card-surface: var(--surface-peach); }
-  .colourful [data-slot="card"]:nth-of-type(5n + 5) { --card-surface: var(--surface-blush); }
 }
 
 @layer utilities {

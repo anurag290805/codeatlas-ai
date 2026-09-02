@@ -64,6 +64,23 @@ class Settings(BaseSettings):
     gemini_temperature: Annotated[float, Field(ge=0, le=2)] = 0.0
     gemini_max_tokens: Annotated[int, Field(gt=0)] = 512
 
+    # Active LLM provider. OmniRoute is local and therefore the zero-cost default.
+    llm_provider: str = Field(default="omniroute", min_length=1)
+
+    # OmniRoute (OpenAI-compatible local gateway)
+    omniroute_base_url: str = Field(
+        default="http://localhost:20128/v1",
+        min_length=1,
+    )
+    omniroute_model: str = Field(
+        default="auto/best-free",
+        min_length=1,
+    )
+    omniroute_api_key: str = Field(default="", validation_alias="OMNIROUTE_API_KEY")
+    omniroute_timeout_seconds: Annotated[float, Field(gt=0)] = 60.0
+
+
+
     # Embeddings
     embedding_provider: str = Field(default="sentence_transformers", min_length=1)
     embedding_model: str = Field(default="BAAI/bge-small-en-v1.5", min_length=1)
@@ -92,7 +109,7 @@ class Settings(BaseSettings):
     retrieval_token_budget: Annotated[int, Field(gt=0)] = 1200
     graph_max_traversal_depth: Annotated[int, Field(gt=0, le=100)] = 10
 
-    @field_validator("environment", "embedding_provider", mode="before")
+    @field_validator("environment", "embedding_provider", "llm_provider", mode="before")
     @classmethod
     def normalize_identifier(cls, value: str) -> str:
         normalized = str(value).strip().lower()

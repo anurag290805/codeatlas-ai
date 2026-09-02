@@ -42,31 +42,31 @@ const STATUS_CONFIG: Record<
     label: "Index Failed",
     icon: AlertCircle,
     className:
-      "border-transparent bg-red-500/10 text-red-600 dark:text-red-400",
+      "border-transparent bg-rose-500/10 text-rose-600 dark:text-rose-400",
   },
 
   failed_import: {
     label: "Import Failed",
     icon: AlertCircle,
     className:
-      "border-transparent bg-red-500/10 text-red-600 dark:text-red-400",
+      "border-transparent bg-rose-500/10 text-rose-600 dark:text-rose-400",
   },
 
   deleting: {
     label: "Deleting",
     icon: AlertCircle,
     className:
-      "border-transparent bg-orange-500/10 text-orange-600 dark:text-orange-400",
+      "border-transparent bg-amber-500/10 text-amber-600 dark:text-amber-400",
   },
   importing: {
     label: "Importing",
     icon: Download,
-    className: "border-transparent bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    className: "border-transparent bg-primary/10 text-primary",
   },
   cloning: {
     label: "Cloning",
     icon: GitBranch,
-    className: "border-transparent bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    className: "border-transparent bg-primary/10 text-primary",
   },
   indexing: {
     label: "Indexing",
@@ -86,7 +86,7 @@ const STATUS_CONFIG: Record<
   error: {
     label: "Error",
     icon: AlertCircle,
-    className: "border-transparent bg-red-500/10 text-red-600 dark:text-red-400",
+    className: "border-transparent bg-rose-500/10 text-rose-600 dark:text-rose-400",
   },
 };
 
@@ -105,7 +105,7 @@ export function RepositoryStatus({ status, className }: RepositoryStatusProps) {
       label: status,
       icon: AlertCircle,
       className:
-        "border-transparent bg-gray-500/10 text-gray-600 dark:text-gray-400",
+        "border-transparent bg-muted text-muted-foreground",
     };
 
   const { label, icon: Icon, className: statusClassName } = config;

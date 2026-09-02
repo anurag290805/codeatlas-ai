@@ -160,9 +160,9 @@ export const CodeBlock: FC<CodeBlockProps> = ({
                   data-line={lineNumber}
                   className={cn(
                     "transition-colors",
-                    isHighlighted && "bg-violet-400/10",
+                    isHighlighted && "bg-primary/10",
                     isMatch && "bg-amber-400/10",
-                    isJumpTarget && "bg-cyan-400/20",
+                    isJumpTarget && "bg-sky-400/20",
                   )}
                 >
                   <td className="select-none whitespace-nowrap px-3 py-0 text-right text-muted-foreground/50">
@@ -171,7 +171,7 @@ export const CodeBlock: FC<CodeBlockProps> = ({
                   <td
                     className={cn(
                       "w-full whitespace-pre px-3 py-0 text-foreground/90",
-                      isHighlighted && "border-l-2 border-violet-400",
+                      isHighlighted && "border-l-2 border-primary",
                     )}
                   >
                     {line.length > 0 ? line : "\u00A0"}

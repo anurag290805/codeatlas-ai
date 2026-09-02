@@ -52,9 +52,9 @@ export const ChatEmptyState: FC<ChatEmptyStateProps> = ({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
-        className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-500/20 to-cyan-400/10"
+        className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/25 bg-primary/10"
       >
-        <Sparkles className="h-6 w-6 text-violet-300" />
+        <Sparkles className="h-6 w-6 text-primary" />
       </motion.div>
 
       <motion.h2
@@ -85,10 +85,10 @@ export const ChatEmptyState: FC<ChatEmptyStateProps> = ({
             onClick={() => onSelectPrompt(item.prompt)}
             className={cn(
               "group flex items-center gap-3 rounded-xl border border-border/60 bg-card/40 p-3.5 text-left backdrop-blur-sm transition-colors",
-              "hover:border-violet-400/40 hover:bg-violet-400/5",
+              "hover:border-primary/40 hover:bg-primary/5",
             )}
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground transition-colors group-hover:text-violet-300">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground transition-colors group-hover:text-primary">
               <item.icon className="h-4 w-4" />
             </div>
             <div className="min-w-0">

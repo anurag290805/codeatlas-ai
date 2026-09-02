@@ -10,7 +10,14 @@ from fastapi.testclient import TestClient
 from app import main
 from app.core.config import Settings
 from app.api import routes_query
-from app.core.llm import GeminiProvider, LLMProviderName, LLMRequest, LLMService, ProviderHealth
+from app.core.llm import (
+    GeminiProvider,
+    LLMProviderName,
+    LLMRequest,
+    LLMService,
+    OmniRouteProvider,
+    ProviderHealth,
+)
 from app.utils.logger import _create_file_handler
 
 
@@ -140,11 +147,41 @@ def test_gemini_generation_is_server_side_and_preserves_rag_context() -> None:
     assert "test-key" not in str(client.payload)
 
 
-def test_gemini_is_the_only_provider() -> None:
-    settings = Settings(_env_file=None, gemini_api_key="test-key")
+def test_gemini_remains_selectable() -> None:
+    settings = Settings(_env_file=None, llm_provider="gemini", gemini_api_key="test-key")
     service = LLMService(settings=settings)
     assert service.provider_name is LLMProviderName.GEMINI
     assert service.is_ready() is True
+
+
+class _OmniRouteClient:
+    async def post(self, _url: str, **kwargs):
+        self.payload = kwargs["json"]
+        return SimpleNamespace(
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=(
+                'data: {"choices":[{"delta":{"content":"grounded "}}]}\n\n'
+                'data: {"choices":[{"delta":{"content":"answer"}}],'
+                '"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}\n\n'
+                'data: [DONE]\n\n'
+            ),
+            json=lambda: {},
+        )
+
+    async def get(self, _url: str, **_kwargs):
+        return SimpleNamespace(status_code=200)
+
+
+def test_omniroute_parses_sse_and_uses_free_auto_model() -> None:
+    settings = Settings(_env_file=None, omniroute_model="auto/best-free")
+    client = _OmniRouteClient()
+    provider = OmniRouteProvider(settings=settings, client=client)
+    text, usage = asyncio.run(provider.generate(LLMRequest(query="where?")))
+    assert text == "grounded answer"
+    assert usage is not None and usage.total_tokens == 6
+    assert client.payload["model"] == "auto/best-free"
+    assert client.payload["stream"] is True
 
 
 def test_gemini_health_is_healthy_when_retriever_is_ready() -> None:

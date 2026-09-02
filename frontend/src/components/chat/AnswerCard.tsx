@@ -144,7 +144,7 @@ function inlineFormat(line: string): ReactNode {
   return parts.map((part, index) => {
     if (part.startsWith("`") && part.endsWith("`")) {
       return (
-        <code key={index} className="rounded bg-muted/50 px-1 py-0.5 font-mono text-[0.85em] text-violet-200">
+        <code key={index} className="rounded bg-muted/50 px-1 py-0.5 font-mono text-[0.85em] text-primary">
           {part.slice(1, -1)}
         </code>
       );
@@ -176,7 +176,7 @@ const SectionCard: FC<{ section: AnswerSection; onCitationOpen?: (c: Citation) =
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/20"
       >
-        <Icon className="h-3.5 w-3.5 shrink-0 text-violet-300" />
+        <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
         <span className="flex-1 text-xs font-semibold uppercase tracking-wide text-foreground/80">
           {section.title}
         </span>
@@ -201,7 +201,7 @@ const SectionCard: FC<{ section: AnswerSection; onCitationOpen?: (c: Citation) =
                       key={q}
                       type="button"
                       onClick={() => onFollowUpSelect?.(q)}
-                      className="rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-foreground/80 hover:border-violet-400/40 hover:bg-violet-400/10"
+                      className="rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-foreground/80 hover:border-primary/30 hover:bg-primary/10"
                     >
                       {q}
                     </button>

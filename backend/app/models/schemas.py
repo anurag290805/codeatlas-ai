@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import base64
+from urllib.parse import urlparse
 from datetime import datetime
 from enum import Enum
 
@@ -239,9 +241,128 @@ class QueryHealthResponse(BaseModel):
     provider_configured: bool = False
     provider_healthy: bool = False
     model_available: bool = False
-    llm_provider: str = "gemini"
-    llm_model: str = "gemini-2.5-flash"
+    llm_provider: str = "omniroute"
+    llm_model: str = "auto/best-free"
     message: str = ""
+
+
+class AgentTaskRequest(BaseModel):
+    repository_id: int = Field(gt=0)
+    task: str = Field(min_length=1, max_length=4000)
+    top_k: int = Field(default=5, ge=1, le=20)
+    acceptance_criteria: list[str] = Field(default_factory=list, max_length=20)
+    image_data_url: str | None = Field(default=None, max_length=7_000_000)
+    route: str | None = Field(default=None, max_length=2048)
+    mode: str = Field(default="analyze", pattern="^(analyze|modify)$")
+
+    @field_validator("task")
+    @classmethod
+    def validate_task(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("task must not be blank")
+        return value
+
+    @field_validator("acceptance_criteria")
+    @classmethod
+    def validate_acceptance_criteria(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip() for value in values]
+        if any(not value or len(value) > 300 for value in cleaned):
+            raise ValueError("acceptance criteria must be non-empty and at most 300 characters")
+        return cleaned
+
+    @field_validator("route")
+    @classmethod
+    def validate_route(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in {"localhost", "127.0.0.1"} or parsed.username or parsed.password:
+            raise ValueError("route must be an http(s) localhost or 127.0.0.1 URL")
+        return value
+
+    @field_validator("image_data_url")
+    @classmethod
+    def validate_image_data_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        match = re.fullmatch(r"data:(image/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)", value.strip(), re.IGNORECASE)
+        if not match:
+            raise ValueError("image_data_url must be a base64 PNG, JPEG, GIF, or WebP data URL")
+        try:
+            decoded = base64.b64decode(match.group(2), validate=True)
+        except (ValueError, base64.binascii.Error) as exc:
+            raise ValueError("image_data_url contains invalid base64") from exc
+        if len(decoded) > 5 * 1024 * 1024:
+            raise ValueError("image_data_url must not exceed 5 MiB")
+        signatures = {
+            "image/png": b"\x89PNG\r\n\x1a\n",
+            "image/jpeg": b"\xff\xd8\xff",
+            "image/gif": (b"GIF87a", b"GIF89a"),
+            "image/webp": b"RIFF",
+        }
+        signature = signatures[match.group(1).lower()]
+        valid = any(decoded.startswith(item) for item in signature) if isinstance(signature, tuple) else decoded.startswith(signature)
+        if not valid:
+            raise ValueError("image_data_url content does not match its declared image type")
+        return value.strip()
+
+
+class AgentSkillResult(BaseModel):
+    skill: str
+    status: str
+    summary: str
+    output: dict = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+    duration_seconds: float = Field(ge=0)
+
+
+class AgentOperationResponse(BaseModel):
+    path: str
+    operation: str
+    old_content_hash: str | None = None
+
+
+class AgentValidationCheckResponse(BaseModel):
+    name: str
+    status: str
+    summary: str
+
+
+class AgentValidationResponse(BaseModel):
+    status: str
+    checks: list[AgentValidationCheckResponse] = Field(default_factory=list)
+
+
+class AgentModificationResponse(BaseModel):
+    status: str
+    files_changed: list[str] = Field(default_factory=list)
+    operations: list[AgentOperationResponse] = Field(default_factory=list)
+    validation: AgentValidationResponse
+    attempts: int = Field(ge=1, le=3)
+    summary: str
+    errors: list[str] = Field(default_factory=list)
+    playwright: dict | None = None
+    # Approval gate: present (status="pending_approval") until a human approves the patch.
+    approval_token: str | None = None
+    diff: str | None = None
+
+
+class AgentApprovalRequest(BaseModel):
+    approval_token: str = Field(min_length=1, max_length=128)
+
+
+class AgentTaskResponse(BaseModel):
+    task: str
+    selected_skills: list[str]
+    status: str
+    final_result: str
+    skill_results: list[AgentSkillResult] = Field(default_factory=list)
+    duration_seconds: float = Field(ge=0)
+    errors: list[str] = Field(default_factory=list)
+    modification: AgentModificationResponse | None = None
+    mode: str = "analyze"
 
 
 class RepositoryFileResponse(BaseModel):

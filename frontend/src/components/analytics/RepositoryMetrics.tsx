@@ -43,11 +43,15 @@ interface MetricDefinition {
   label: string;
   icon: FC<{ className?: string }>;
   value: string;
+  /** Secondary metrics render smaller and denser than the headline tier. */
+  featured?: boolean;
 }
 
 /**
- * Displays the repository's top-line analytics as a responsive grid of
- * metric cards. Purely presentational - all values arrive through props.
+ * Aggregates a repository's top-line analytics into two visual tiers:
+ * a few headline metrics carry the weight while the remainder sit in a
+ * denser grid. This avoids the "wall of identical cards" failure mode
+ * while keeping every metric visible.
  */
 export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
   data,
@@ -56,16 +60,38 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
 }) => {
   const metrics: MetricDefinition[] = [
     {
-      key: "repositories",
-      label: "Repositories",
-      icon: FolderTree,
-      value: formatCompactNumber(data.totalRepositories),
-    },
-    {
       key: "files",
       label: "Total files",
       icon: FileText,
       value: formatCompactNumber(data.totalFiles),
+      featured: true,
+    },
+    {
+      key: "languages",
+      label: "Languages detected",
+      icon: Languages,
+      value: formatCompactNumber(data.languagesDetected),
+      featured: true,
+    },
+    {
+      key: "chunks",
+      label: "AI chunks",
+      icon: Boxes,
+      value: formatCompactNumber(data.aiChunks),
+      featured: true,
+    },
+    {
+      key: "size",
+      label: "Repository size",
+      icon: HardDrive,
+      value: formatOptionalBytes(data.repositorySizeBytes),
+      featured: true,
+    },
+    {
+      key: "repositories",
+      label: "Repositories",
+      icon: FolderTree,
+      value: formatCompactNumber(data.totalRepositories),
     },
     {
       key: "folders",
@@ -80,18 +106,6 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       value: formatOptionalNumber(data.totalSymbols),
     },
     {
-      key: "languages",
-      label: "Languages detected",
-      icon: Languages,
-      value: formatCompactNumber(data.languagesDetected),
-    },
-    {
-      key: "chunks",
-      label: "AI chunks",
-      icon: Boxes,
-      value: formatCompactNumber(data.aiChunks),
-    },
-    {
       key: "embeddings",
       label: "Embeddings",
       icon: Sparkles,
@@ -102,12 +116,6 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       label: "Dependency nodes",
       icon: Waypoints,
       value: formatOptionalNumber(data.dependencyNodes),
-    },
-    {
-      key: "size",
-      label: "Repository size",
-      icon: HardDrive,
-      value: formatOptionalBytes(data.repositorySizeBytes),
     },
     {
       key: "processing",
@@ -123,61 +131,99 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
     },
   ];
 
+  const featured = metrics.filter((metric) => metric.featured);
+  const secondary = metrics.filter((metric) => !metric.featured);
+
+  if (isLoading) {
+    return (
+      <div className={cn("space-y-4", className)}>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {featured.map((metric) => <MetricCardSkeleton key={metric.key} featured />)}
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          {secondary.map((metric) => <MetricCardSkeleton key={metric.key} />)}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4",
-        className,
-      )}
-    >
-      {isLoading
-        ? metrics.map((metric) => <MetricCardSkeleton key={metric.key} />)
-        : metrics.map((metric, index) => (
-            <MetricCard key={metric.key} metric={metric} index={index} />
-          ))}
+    <div className={cn("space-y-4", className)}>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {featured.map((metric, index) => (
+          <MetricCard key={metric.key} metric={metric} index={index} />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+        {secondary.map((metric, index) => (
+          <MetricCard key={metric.key} metric={metric} index={index + featured.length} compact />
+        ))}
+      </div>
     </div>
   );
 };
 
-const MetricCard: FC<{ metric: MetricDefinition; index: number }> = ({
-  metric,
-  index,
-}) => (
-  <motion.div
-    initial={{ opacity: 0, y: 6 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.2, delay: index * 0.03 }}
-  >
-    <Card className="h-full border-border/60 transition-colors hover:border-border">
-      <CardContent className="flex items-start justify-between gap-3 p-4">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{metric.label}</p>
-          <p className="mt-1 truncate text-xl font-semibold tracking-tight text-foreground">
-            {metric.value}
-          </p>
-        </div>
-        <MetricIconBadge icon={metric.icon} />
-      </CardContent>
-    </Card>
-  </motion.div>
-);
+const MetricCard: FC<{
+  metric: MetricDefinition;
+  index: number;
+  compact?: boolean;
+}> = ({ metric, index, compact = false }) => {
+  const Icon = metric.icon;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, delay: index * 0.02 }}
+      className={cn(!compact && "h-full")}
+    >
+      <Card
+        className={cn(
+          "h-full transition-colors hover:border-border",
+          compact ? "border-border/50" : "border-border/70",
+        )}
+      >
+        <CardContent className={cn(compact ? "p-3" : "flex items-start justify-between gap-3 p-4")}>
+          {compact ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-xs text-muted-foreground">{metric.label}</p>
+              <p className="shrink-0 text-sm font-semibold tracking-tight tabular-nums">{metric.value}</p>
+            </div>
+          ) : (
+            <>
+              <div className="min-w-0">
+                <p className="truncate text-xs text-muted-foreground">{metric.label}</p>
+                <p className="mt-1 truncate text-2xl font-semibold tracking-tight tabular-nums">
+                  {metric.value}
+                </p>
+              </div>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/60">
+                <Icon className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+};
 
-const MetricIconBadge: FC<{ icon: FC<{ className?: string }> }> = ({
-  icon: Icon,
-}) => (
-  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/60">
-    <Icon className="h-4 w-4 text-muted-foreground" />
-  </div>
-);
-
-const MetricCardSkeleton: FC = () => (
+const MetricCardSkeleton: FC<{ featured?: boolean }> = ({ featured = false }) => (
   <Card className="border-border/60">
-    <CardContent className="flex items-start justify-between gap-3 p-4">
-      <div className="min-w-0 flex-1 space-y-2">
-        <Skeleton className="h-3 w-20" />
-        <Skeleton className="h-6 w-14" />
-      </div>
-      <Skeleton className="h-8 w-8 rounded-md" />
+    <CardContent className={cn("space-y-2.5", featured ? "p-4" : "p-3")}>
+      {featured ? (
+        <>
+          <div className="flex items-start justify-between gap-3">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-8 w-8 rounded-md" />
+          </div>
+          <Skeleton className="h-7 w-16" />
+        </>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-4 w-10" />
+        </div>
+      )}
     </CardContent>
   </Card>
 );

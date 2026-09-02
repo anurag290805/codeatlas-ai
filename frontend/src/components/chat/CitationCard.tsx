@@ -49,7 +49,7 @@ export const CitationCard: FC<CitationCardProps> = ({ citation, onOpen, classNam
     <div
       className={cn(
         "overflow-hidden rounded-xl border border-border/60 bg-muted/20 transition-colors",
-        "hover:border-violet-400/40",
+        "hover:border-primary/30",
         className,
       )}
     >
@@ -58,7 +58,7 @@ export const CitationCard: FC<CitationCardProps> = ({ citation, onOpen, classNam
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-start gap-3 px-3.5 py-3 text-left"
       >
-        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-400/10 text-violet-300">
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <FileCode2 className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0 flex-1">
@@ -87,7 +87,7 @@ export const CitationCard: FC<CitationCardProps> = ({ citation, onOpen, classNam
             <div className="mt-1.5 flex items-center gap-1.5">
               <div className="h-1 w-16 overflow-hidden rounded-full bg-muted/50">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400"
+                  className="h-full rounded-full bg-primary"
                   style={{ width: `${Math.round(enriched.confidence * 100)}%` }}
                 />
               </div>
@@ -133,7 +133,7 @@ export const CitationCard: FC<CitationCardProps> = ({ citation, onOpen, classNam
             <button
               type="button"
               onClick={() => onOpen?.(citation)}
-              className="mt-2 text-xs font-medium text-violet-300 hover:text-violet-200"
+              className="mt-2 text-xs font-medium text-primary hover:text-primary/80"
             >
               Open in workspace \u2192
             </button>

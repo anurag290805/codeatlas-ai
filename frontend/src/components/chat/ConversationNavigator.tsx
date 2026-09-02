@@ -88,7 +88,7 @@ const ConversationRow: FC<{
       whileHover={{ x: 2 }}
       className={cn(
         "group flex items-center gap-1 rounded-md px-2 py-1.5 text-xs transition-colors",
-        active ? "bg-violet-400/10 text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+        active ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
       )}
     >
       <button type="button" onClick={onSelect} onDoubleClick={() => setRenaming(true)} className="min-w-0 flex-1 text-left">
@@ -100,7 +100,7 @@ const ConversationRow: FC<{
         onClick={() => onPin?.(!conversation.pinned)}
         className={cn(
           "shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
-          conversation.pinned && "text-violet-300 opacity-100",
+          conversation.pinned && "text-primary opacity-100",
         )}
         aria-label={conversation.pinned ? "Unpin conversation" : "Pin conversation"}
       >

@@ -34,12 +34,12 @@ export const SourceChip: FC<SourceChipProps> = ({ citation, onClick, className }
       onClick={() => onClick?.(citation)}
       className={cn(
         "group inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors",
-        "hover:border-violet-400/40 hover:bg-violet-400/10 hover:text-foreground",
+        "hover:border-primary/30 hover:bg-primary/10 hover:text-foreground",
         className,
       )}
       title={citation.filePath}
     >
-      <FileCode2 className="h-3 w-3 shrink-0 text-violet-400/80" />
+      <FileCode2 className="h-3 w-3 shrink-0 text-primary/80" />
       <span className="truncate font-medium text-foreground/90">
         {basename(citation.filePath)}
       </span>

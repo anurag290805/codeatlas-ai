@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, GitBranch, Loader2, RefreshCw, ShieldCheck, Boxes } from "lucide-react";
+import {
+  ArrowLeft,
+  Boxes,
+  FoldHorizontal,
+  GitBranch,
+  RefreshCw,
+  ShieldCheck,
+  Star,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
@@ -8,6 +16,9 @@ import { FileExplorer } from "@/components/repository/FileExplorer";
 import { RepositoryHeader } from "@/components/repository/RepositoryHeader";
 import { RepositoryOverview } from "@/components/repository/RepositoryOverview";
 import { RepositoryStats } from "@/components/repository/RepositoryStats";
+import { Loading } from "@/components/common/Loading";
+import { ErrorState } from "@/components/common/ErrorState";
+import { SectionHeader } from "@/components/common/SectionHeader";
 import { useRepository, useRepositoryFile, useRepositoryFileTree } from "@/hooks/useRepository";
 import { useReindexRepository } from "@/hooks/useRepositories";
 import type {
@@ -122,31 +133,27 @@ export function Repository() {
   const fileTree = treeQuery.data ?? repositoryQuery.data?.files ?? [];
 
   if (repositoryQuery.isLoading) {
-    return (
-      <div className="flex min-h-[32rem] items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading repository workspace…
-      </div>
-    );
+    return <Loading label="Loading repository workspace…" className="min-h-[32rem]" />;
   }
 
   if (repositoryQuery.isError || !repository) {
     return (
-      <Card>
-        <CardContent className="flex min-h-[20rem] flex-col items-center justify-center gap-3 text-center">
-          <AlertCircle className="h-8 w-8 text-destructive" />
-          <div>
-            <p className="font-medium">Unable to load this repository</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              The repository may not exist or is unavailable right now.
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => void repositoryQuery.refetch()} className="gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" />
-            Try again
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="mx-auto w-full max-w-3xl">
+        <Card>
+          <CardContent className="p-0">
+            <ErrorState
+              title="Unable to load this repository"
+              description="The repository may not exist or is unavailable right now."
+              action={
+                <Button variant="outline" size="sm" onClick={() => void repositoryQuery.refetch()} className="gap-1.5">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Try again
+                </Button>
+              }
+            />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -175,22 +182,70 @@ export function Repository() {
         </Card>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><GitBranch className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">GitHub stars</p><p className="font-semibold">{githubQuery.data?.available ? githubQuery.data.stars.toLocaleString() : "Unavailable"}</p></div></div></CardContent></Card>
-        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><Boxes className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">Dependencies</p><Link className="font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/dependencies`}>Inspect packages</Link></div></div></CardContent></Card>
-        <Card><CardContent className="flex items-center justify-between p-4"><div className="flex items-center gap-3"><ShieldCheck className="h-4 w-4 text-primary" /><div><p className="text-xs text-muted-foreground">Security</p><Link className="font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/security`}>Scan with OSV</Link></div></div></CardContent></Card>
-      </div>
+      <section aria-label="Repository intelligence" className="space-y-3">
+        <SectionHeader
+          title="Explore"
+          description="Jump to related intelligence for this repository."
+        />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card className="border-border/60 transition-colors hover:border-border">
+            <CardContent className="flex items-center justify-between gap-3 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
+                  <Star className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">GitHub stars</p>
+                  <p className="truncate text-sm font-semibold">
+                    {githubQuery.data?.available ? githubQuery.data.stars.toLocaleString() : "Unavailable"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-border/60 transition-colors hover:border-border">
+            <CardContent className="flex items-center justify-between gap-3 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
+                  <Boxes className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Dependencies</p>
+                  <Link className="text-sm font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/dependencies`}>
+                    Inspect packages
+                  </Link>
+                </div>
+              </div>
+              <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+            </CardContent>
+          </Card>
+          <Card className="border-border/60 transition-colors hover:border-border">
+            <CardContent className="flex items-center justify-between gap-3 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Security</p>
+                  <Link className="text-sm font-semibold text-primary hover:underline" to={`/repositories/${repositoryId}/security`}>
+                    Scan with OSV
+                  </Link>
+                </div>
+              </div>
+              <FoldHorizontal className="h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
       <RepositoryOverview repository={repository} />
       <RepositoryStats stats={repository.statistics!} />
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-base font-semibold tracking-tight">Files</h2>
-          <p className="text-sm text-muted-foreground">
-            Browse the indexed repository and inspect source files in read-only mode.
-          </p>
-        </div>
+      <section aria-label="Files" className="space-y-3">
+        <SectionHeader
+          title="Files"
+          description="Browse the indexed repository and inspect source files in read-only mode."
+        />
         <FileExplorer
           fileTree={[...fileTree]}
           selectedPath={selectedPath}

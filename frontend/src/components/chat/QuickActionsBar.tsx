@@ -69,9 +69,9 @@ export const QuickActionsBar: FC<QuickActionsBarProps> = ({ onSelectAction, acti
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.15, delay: index * 0.02 }}
             onClick={() => onSelectAction(action)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-foreground/80 backdrop-blur-sm transition-colors hover:border-violet-400/40 hover:bg-violet-400/10 hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-foreground/80 backdrop-blur-sm transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
           >
-            <Icon className="h-3.5 w-3.5 text-violet-300" />
+            <Icon className="h-3.5 w-3.5 text-primary" />
             {action.label}
           </motion.button>
         );

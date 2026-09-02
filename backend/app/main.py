@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes_graph import router as graph_router
 from app.api.routes_analytics import router as analytics_router
 from app.api.routes_query import router as query_router
+from app.api.routes_agent import router as agent_router
 from app.api.routes_repo import router as repo_router
 from app.config import get_settings
 from app.core.auth import WORKSPACE_COOKIE, ensure_workspace_cookie, workspace_cookie_value
@@ -217,6 +218,7 @@ def _register_routers(app: FastAPI) -> None:
 
     app.include_router(repo_router, prefix=api_prefix)
     app.include_router(query_router, prefix=api_prefix)
+    app.include_router(agent_router, prefix=api_prefix)
     app.include_router(graph_router, prefix=api_prefix)
     app.include_router(analytics_router, prefix=api_prefix)
 
@@ -284,6 +286,7 @@ def create_app() -> FastAPI:
         openapi_tags=[
             {"name": "repositories", "description": "Repository lifecycle management."},
             {"name": "query", "description": "Retrieval-Augmented Generation querying."},
+            {"name": "agent", "description": "Routed, skill-aware repository tasks."},
             {"name": "graph", "description": "Repository dependency graph access."},
             {"name": "system", "description": "Service health and metadata."},
         ],

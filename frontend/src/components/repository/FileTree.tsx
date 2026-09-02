@@ -235,9 +235,8 @@ export function FileTree({
             }}
             style={{ paddingLeft: `${depth * 16 + 8}px` }}
             className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-sm outline-none",
+              "flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-sm",
               "transition-colors hover:bg-muted/60",
-              "focus-visible:ring-1 focus-visible:ring-ring",
               isSelected && "bg-accent text-accent-foreground",
             )}
           >
@@ -258,7 +257,7 @@ export function FileTree({
               <Icon
                 className={cn(
                   "h-3.5 w-3.5 shrink-0",
-                  node.type === "directory" ? "text-blue-400" : "text-muted-foreground",
+                  node.type === "directory" ? "text-primary" : "text-muted-foreground",
                 )}
               />
             )}

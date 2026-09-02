@@ -60,7 +60,7 @@ export const ContextSidebar: FC<ContextSidebarProps> = ({
           <Card className="border-border/60 bg-card/40">
             <CardContent className="space-y-3 p-3.5">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Sparkles className="h-4 w-4 text-violet-300" />
+                <Sparkles className="h-4 w-4 text-primary" />
                 {modelName ?? "Assistant"}
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">

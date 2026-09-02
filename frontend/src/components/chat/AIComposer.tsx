@@ -246,11 +246,11 @@ export const AIComposer: FC<AIComposerProps> = ({
                     className={cn(
                       "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
                       index === activeIndex
-                        ? "bg-violet-400/15 text-foreground"
+                        ? "bg-primary/10 text-foreground"
                         : "text-muted-foreground hover:bg-muted/60",
                     )}
                   >
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-violet-300" />
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-primary" />
                     <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
                     {item.sublabel && (
                       <span className="shrink-0 truncate text-xs text-muted-foreground">
@@ -268,7 +268,7 @@ export const AIComposer: FC<AIComposerProps> = ({
       <div
         className={cn(
           "rounded-2xl border border-border/60 bg-card/60 shadow-lg shadow-black/20 backdrop-blur-md transition-shadow",
-          "focus-within:border-violet-400/50 focus-within:shadow-violet-500/10",
+          "focus-within:border-primary/50 focus-within:shadow-primary/10",
         )}
       >
         <div className="flex items-center gap-1.5 border-b border-border/40 px-3.5 py-2">
@@ -326,7 +326,7 @@ export const AIComposer: FC<AIComposerProps> = ({
               onSubmit(value.trim());
               setValue("");
             }}
-            className="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-violet-500 to-cyan-400 text-white hover:opacity-90 disabled:opacity-40"
+            className="h-8 w-8 shrink-0 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
             aria-label="Send message"
           >
             {isLoading ? (

@@ -1,11 +1,11 @@
 // src/components/layout/Navbar.tsx
-import { Bell, Menu, Search as SearchIcon } from "lucide-react";
+import { Menu, Plus, Search as SearchIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { useGlobalImport } from "@/components/common/useGlobalImport";
 
 interface NavbarProps {
   title: string;
@@ -14,11 +14,13 @@ interface NavbarProps {
 }
 
 /**
- * Sticky top navigation bar. Displays the current page title, a global
- * search field, and quick-access actions (theme, notifications, profile).
+ * Sticky top navigation bar. Shows the current page title, a global
+ * search field, and quick actions (import, theme). Deliberately avoids
+ * dead affordances — every control responds to user intent.
  */
 export function Navbar({ title, onMenuClick }: NavbarProps) {
   const navigate = useNavigate();
+  const { openImport } = useGlobalImport();
   const [query, setQuery] = useState("");
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -27,7 +29,7 @@ export function Navbar({ title, onMenuClick }: NavbarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:px-6">
       <Button
         variant="ghost"
         size="icon"
@@ -38,7 +40,10 @@ export function Navbar({ title, onMenuClick }: NavbarProps) {
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="flex min-w-0 items-center gap-2"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_15%,transparent)]" aria-hidden="true" /><h1 className="truncate text-sm font-semibold tracking-tight sm:text-base">{title}</h1></div>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="sr-only" aria-hidden="true">{title}</span>
+        <span className="truncate text-sm font-semibold tracking-tight sm:text-base">{title}</span>
+      </div>
 
       <form onSubmit={submitSearch} className="relative ml-2 hidden max-w-md flex-1 sm:block">
         <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -53,15 +58,20 @@ export function Navbar({ title, onMenuClick }: NavbarProps) {
       </form>
 
       <div className="ml-auto flex items-center gap-2">
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell className="h-5 w-5" />
+        <Button variant="outline" size="sm" onClick={openImport} className="hidden gap-1.5 sm:inline-flex">
+          <Plus className="h-4 w-4" />
+          Import
         </Button>
-
+        <Button
+          variant="ghost"
+          size="icon"
+          className="sm:hidden"
+          onClick={openImport}
+          aria-label="Import repository"
+        >
+          <Plus className="h-5 w-5" />
+        </Button>
         <ThemeToggle />
-
-        <Avatar className="h-8 w-8">
-          <AvatarFallback>CA</AvatarFallback>
-        </Avatar>
       </div>
     </header>
   );

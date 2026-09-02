@@ -35,11 +35,11 @@ export const SuggestedPrompts: FC<SuggestedPromptsProps> = ({
           onClick={() => onSelect(prompt)}
           className={cn(
             "group inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-foreground/80 backdrop-blur-sm transition-colors",
-            "hover:border-violet-400/40 hover:bg-violet-400/10 hover:text-foreground",
+            "hover:border-primary/30 hover:bg-primary/10 hover:text-foreground",
           )}
         >
           {prompt}
-          <ArrowUpRight className="h-3 w-3 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-violet-300" />
+          <ArrowUpRight className="h-3 w-3 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />
         </motion.button>
       ))}
     </div>

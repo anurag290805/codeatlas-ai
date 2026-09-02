@@ -77,7 +77,7 @@ const GraphPreview: FC<{ nodeCount: number; edgeCount: number; clusterCount: num
       type="button"
       onClick={onOpen}
       disabled={!onOpen}
-      className="group relative h-24 w-full overflow-hidden rounded-lg border border-border/50 bg-gradient-to-br from-violet-500/10 via-transparent to-cyan-400/10 text-left"
+      className="group relative h-24 w-full overflow-hidden rounded-lg border border-border/50 bg-gradient-to-br from-primary/10 via-transparent to-chart-2/10 text-left"
     >
       <svg viewBox="0 0 200 100" className="absolute inset-0 h-full w-full opacity-70">
         {dots.map((i) => {
@@ -89,7 +89,7 @@ const GraphPreview: FC<{ nodeCount: number; edgeCount: number; clusterCount: num
               cx={x}
               cy={y}
               r={i % 5 === 0 ? 3 : 1.6}
-              className={i % 3 === 0 ? "fill-violet-400/70" : "fill-cyan-400/50"}
+              className={i % 3 === 0 ? "fill-chart-1/70" : "fill-chart-2/50"}
             />
           );
         })}
@@ -108,7 +108,7 @@ const GraphPreview: FC<{ nodeCount: number; edgeCount: number; clusterCount: num
           {nodeCount.toLocaleString()} nodes &middot; {edgeCount.toLocaleString()} edges
         </span>
         {onOpen && (
-          <span className="flex items-center gap-1 text-violet-300 opacity-0 transition-opacity group-hover:opacity-100">
+          <span className="flex items-center gap-1 text-primary opacity-0 transition-opacity group-hover:opacity-100">
             <Network className="h-3 w-3" /> Open graph
           </span>
         )}
@@ -144,7 +144,7 @@ export const RepositoryMap: FC<RepositoryMapProps> = ({ data, onOpenGraph, class
       <Card className="border-border/60 bg-card/50 backdrop-blur-sm">
         <CardContent className="space-y-3.5 p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/25 to-cyan-400/15 text-sm font-semibold text-violet-200">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-semibold text-primary">
               {initials}
             </div>
             <div className="min-w-0 flex-1">
@@ -189,7 +189,7 @@ export const RepositoryMap: FC<RepositoryMapProps> = ({ data, onOpenGraph, class
             <div className="space-y-1">
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400"
+                  className="h-full rounded-full bg-primary"
                   animate={{ width: `${Math.round(indexing.percent * 100)}%` }}
                   transition={{ duration: 0.4, ease: "easeOut" }}
                 />
@@ -208,9 +208,9 @@ export const RepositoryMap: FC<RepositoryMapProps> = ({ data, onOpenGraph, class
                     key={language.language}
                     className={cn(
                       "h-full",
-                      index === 0 && "bg-violet-400",
-                      index === 1 && "bg-cyan-400",
-                      index === 2 && "bg-fuchsia-400",
+                      index === 0 && "bg-chart-1",
+                      index === 1 && "bg-chart-2",
+                      index === 2 && "bg-chart-5",
                       index === 3 && "bg-muted-foreground/50",
                     )}
                     animate={{ width: `${language.percentage}%` }}

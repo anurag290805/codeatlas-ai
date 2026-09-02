@@ -79,13 +79,13 @@ const STATUS_CONFIG: Record<RepositoryProcessingStatus, StatusConfig> = {
   storing: {
     label: "Storing vectors",
     icon: Loader2,
-    badgeClassName: "bg-violet-500/10 text-violet-500 border-transparent",
+    badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
     spin: true,
   },
   embedding: {
     label: "Embedding",
     icon: Loader2,
-    badgeClassName: "bg-violet-500/10 text-violet-500 border-transparent",
+    badgeClassName: "bg-blue-500/10 text-blue-500 border-transparent",
     spin: true,
   },
   ready: {

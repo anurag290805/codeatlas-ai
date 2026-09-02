@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, Loader2, Server } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useHealth, useQueryHealth } from "@/hooks/useHealth";
 import { cn } from "@/lib/utils";
 
@@ -49,7 +49,7 @@ function Signal({
   state: HealthState;
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+    <div className="rounded-md border border-border/60 bg-muted/30 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">{label}</p>
         <span
@@ -94,41 +94,30 @@ export function HealthStatus({ className }: HealthStatusProps) {
     : query.data?.message;
 
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
-      className={cn(
-        "rounded-xl border bg-card p-5 text-card-foreground shadow-sm sm:p-6",
-        className,
-      )}
-      aria-label="Platform health"
-    >
-      <div className="flex flex-col gap-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Server className="h-5 w-5" />
-            </div>
-
-            <div>
-              <h2 className="text-sm font-semibold">Platform health</h2>
-              <p className="text-xs text-muted-foreground">
-                Backend health and AI readiness
-              </p>
-            </div>
+    <Card className={cn("border-border/60", className)} aria-label="Platform health">
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Server className="h-4 w-4" />
           </div>
-
-          <StatusPill
-            state={backendState}
-            label={
-              backendState === "healthy"
-                ? "Backend available"
-                : "Backend unavailable"
-            }
-          />
+          <div>
+            <CardTitle className="text-base">Platform health</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Backend health and AI readiness
+            </p>
+          </div>
         </div>
 
+        <StatusPill
+          state={backendState}
+          label={
+            backendState === "healthy"
+              ? "Backend available"
+              : "Backend unavailable"
+          }
+        />
+      </CardHeader>
+      <CardContent className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Signal
             label="Backend"
@@ -189,8 +178,8 @@ export function HealthStatus({ className }: HealthStatusProps) {
               "AI answers may be unavailable until the provider is ready."}
           </p>
         )}
-      </div>
-    </motion.section>
+      </CardContent>
+    </Card>
   );
 }
 

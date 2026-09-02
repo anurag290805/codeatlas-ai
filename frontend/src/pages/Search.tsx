@@ -2,9 +2,13 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import { FileCode2, FolderGit2, Search as SearchIcon } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/common/PageHeader";
+import { EmptyState } from "@/components/common/EmptyState";
+import { ErrorState } from "@/components/common/ErrorState";
 import { useRepositories } from "@/hooks/useRepositories";
 import type { RepositoryListItem } from "@/types/repository";
 
@@ -18,7 +22,7 @@ function repositoryName(repository: RepositoryListItem): string {
 
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query.trim()) return <>{text}</>;
-  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")})`, "ig"));
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig"));
   return (
     <>
       {parts.map((part, index) =>
@@ -33,6 +37,8 @@ function Highlight({ text, query }: { text: string; query: string }) {
     </>
   );
 }
+
+const SCOPES: SearchScope[] = ["repositories", "files", "symbols", "semantic"];
 
 export function Search() {
   const navigate = useNavigate();
@@ -71,10 +77,11 @@ export function Search() {
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
-        <p className="text-sm text-muted-foreground">Find indexed repositories and code intelligence resources.</p>
-      </div>
+      <PageHeader
+        title="Search"
+        description="Find indexed repositories, files, and symbols across your workspace."
+        icon={<SearchIcon className="h-5 w-5" />}
+      />
 
       <Card>
         <CardContent className="space-y-4 p-5">
@@ -94,12 +101,12 @@ export function Search() {
             />
           </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Search scope">
-            {(["repositories", "files", "symbols", "semantic"] as SearchScope[]).map((value) => (
+            {SCOPES.map((value) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => setScope(value)}
-                className={`rounded-full border px-3 py-1 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${scope === value ? "border-primary/40 bg-primary/10 text-foreground" : "border-border/60 text-muted-foreground hover:bg-muted"}`}
+                className={`rounded-full border px-3 py-1 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${scope === value ? "border-primary/40 bg-primary/10 text-foreground" : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                 aria-pressed={scope === value}
               >
                 {value}
@@ -110,22 +117,54 @@ export function Search() {
       </Card>
 
       <Card id="search-results">
-        <CardHeader>
-          <CardTitle className="text-sm font-medium">Search results</CardTitle>
-        </CardHeader>
         <CardContent className="p-0">
           {repositoriesQuery.isLoading ? (
-            <div className="space-y-3 p-5">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div>
+            <div className="space-y-3 p-5">
+              {[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 w-full" />)}
+            </div>
           ) : repositoriesQuery.isError ? (
-            <p className="p-5 text-sm text-destructive">Unable to load searchable repositories. Please retry.</p>
+            <div className="p-2">
+              <ErrorState
+                title="Unable to load searchable repositories"
+                description="The search index could not be reached. Try again."
+                action={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void repositoriesQuery.refetch()}
+                    className="gap-1.5"
+                  >
+                    <SearchIcon className="h-3.5 w-3.5" />
+                    Retry
+                  </Button>
+                }
+              />
+            </div>
           ) : scope !== "repositories" ? (
-            <p className="p-5 text-sm text-muted-foreground">This backend does not currently expose a global {scope} search endpoint.</p>
+            <EmptyState
+              icon={SearchIcon}
+              title={`${scope} search unavailable`}
+              description="This backend does not currently expose a global scope search endpoint. Searching repositories is always available."
+            />
           ) : !query.trim() ? (
-            <p className="p-5 text-sm text-muted-foreground">Start typing to search imported repositories.</p>
+            <EmptyState
+              icon={SearchIcon}
+              title="Start typing to search"
+              description="Search across your imported repositories by name."
+            />
           ) : results.length === 0 ? (
-            <p className="p-5 text-sm text-muted-foreground">No repositories matched “{query}”.</p>
+            <EmptyState
+              icon={FolderGit2}
+              title="No repositories matched"
+              description={`No imported repositories match “${query.trim()}”.`}
+            />
           ) : (
-            <div className="divide-y divide-border/60" role="listbox" aria-label="Search results">
+            <div
+              className="divide-y divide-border/60"
+              role="listbox"
+              aria-label="Search results"
+              aria-live="polite"
+            >
               {results.map((repository, index) => (
                 <button
                   key={repository.id}
@@ -136,12 +175,17 @@ export function Search() {
                   onClick={() => navigate(`/repositories/${repository.id}`)}
                   className={`flex w-full items-center gap-3 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${index === activeIndex ? "bg-muted/60" : "hover:bg-muted/40"}`}
                 >
-                  <FolderGit2 className="h-5 w-5 shrink-0 text-muted-foreground" />
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
+                    <FolderGit2 className="h-4 w-4" />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium"><Highlight text={repositoryName(repository)} query={query} /></span>
-                    <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <FileCode2 className="h-3.5 w-3.5" /> {repository.files_indexed.toLocaleString()} files
-                      <Badge variant="outline" className="font-normal">{repository.status}</Badge>
+                    <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <FileCode2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        {repository.files_indexed.toLocaleString()} files
+                      </span>
+                      <Badge variant="outline" className="font-normal normal-case">{repository.status}</Badge>
                     </span>
                   </span>
                 </button>

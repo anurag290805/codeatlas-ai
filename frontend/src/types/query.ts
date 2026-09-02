@@ -57,6 +57,46 @@ export interface QueryResponse {
   readonly token_usage?: Readonly<Record<string, number>> | null;
 }
 
+export interface AgentTaskRequest {
+  readonly repository_id: number;
+  readonly task: string;
+  readonly top_k?: number;
+  readonly acceptance_criteria?: readonly string[];
+  readonly image_data_url?: string;
+  readonly route?: string;
+  readonly mode?: "analyze" | "modify";
+}
+
+export interface AgentSkillResult {
+  readonly skill: string;
+  readonly status: string;
+  readonly summary: string;
+  readonly output: Readonly<Record<string, unknown>>;
+  readonly errors: readonly string[];
+  readonly duration_seconds: number;
+}
+
+export interface AgentTaskResponse {
+  readonly task: string;
+  readonly selected_skills: readonly string[];
+  readonly status: string;
+  readonly final_result: string;
+  readonly skill_results: readonly AgentSkillResult[];
+  readonly duration_seconds: number;
+  readonly errors: readonly string[];
+  readonly modification?: {
+    readonly status?: string;
+    readonly files_changed?: readonly string[];
+    readonly operations?: readonly Readonly<Record<string, unknown>>[];
+    readonly validation?: Readonly<Record<string, unknown>> | null;
+    readonly attempts?: number;
+    readonly summary?: string;
+    readonly errors?: readonly string[];
+    readonly playwright?: Readonly<Record<string, unknown>> | null;
+  } | null;
+  readonly mode?: "analyze" | "modify";
+}
+
 /** A single incremental chunk of a streamed AI answer. */
 export interface StreamingChunk {
   readonly delta: string;

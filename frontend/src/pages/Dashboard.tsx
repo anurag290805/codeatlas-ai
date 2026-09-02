@@ -1,21 +1,28 @@
 import { useMemo, useState } from "react";
 import {
   Boxes,
+  CheckCircle2,
+  CircleAlert,
   Database,
   FileCode2,
-  FolderGit2,
   Import,
-  Layers3,
+  LayoutDashboard,
+  Loader2,
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/common/PageHeader";
+import { SectionHeader } from "@/components/common/SectionHeader";
+import { EmptyState } from "@/components/common/EmptyState";
+import { ErrorState } from "@/components/common/ErrorState";
 import { ImportRepositoryDialog, type ImportRepositoryFormValues } from "@/components/dashboard/ImportRepositoryDialog";
 import { HealthStatus } from "@/components/dashboard/HealthStatus";
 import { RecentActivity, type ActivityItem } from "@/components/dashboard/RecentActivity";
 import { RepositoryCard } from "@/components/dashboard/RepositoryCard";
 import { StatsCard } from "@/components/dashboard/StatisticsCard";
+import { WorkspaceReadiness, type ReadinessSegment } from "@/components/dashboard/WorkspaceReadiness";
 import { useDeleteRepository, useImportRepository, useRepositories } from "@/hooks/useRepositories";
 import { useNavigate } from "react-router-dom";
 import type { RepositoryListItem } from "@/types/repository";
@@ -83,6 +90,10 @@ function isRepositoryReady(repository: RepositoryListItem): boolean {
   return repository.status === "ready" || repository.status === "indexed";
 }
 
+function isRepositoryFailed(repository: RepositoryListItem): boolean {
+  return ["failed", "index_failed", "failed_import"].includes(repository.status);
+}
+
 function toActivity(repository: RepositoryListItem): ActivityItem {
   const activityType: ActivityItem["type"] =
     isRepositoryReady(repository) ? "index_updated" : "repository_imported";
@@ -118,10 +129,21 @@ export function Dashboard() {
     0,
   );
   const indexedRepositories = repositories.filter(isRepositoryReady).length;
+  const failedRepositories = repositories.filter(isRepositoryFailed).length;
+  const processingRepositories = repositories.length - indexedRepositories - failedRepositories;
 
   const activities = useMemo(
     () => repositories.slice(0, 5).map(toActivity),
     [repositories],
+  );
+
+  const readinessSegments: ReadinessSegment[] = useMemo(
+    () => [
+      { label: "Ready", count: indexedRepositories, color: "bg-emerald-500", icon: CheckCircle2 },
+      { label: "Processing", count: processingRepositories, color: "bg-amber-500", icon: Loader2 },
+      { label: "Failed", count: failedRepositories, color: "bg-rose-500", icon: CircleAlert },
+    ],
+    [indexedRepositories, processingRepositories, failedRepositories],
   );
 
   const handleImport = async ({ repositoryUrl }: ImportRepositoryFormValues) => {
@@ -147,34 +169,34 @@ export function Dashboard() {
     }
   };
 
+  const isLoading = repositoriesQuery.isLoading;
+  const hasError = repositoriesQuery.isError && repositories.length === 0;
+  const isEmpty = !isLoading && !hasError && repositories.length === 0;
+
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/10 via-card to-cyan-500/5 p-5 shadow-sm sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            An overview of your repositories, activity, and platform health.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void repositoriesQuery.refetch()}
-            disabled={repositoriesQuery.isFetching}
-            className="gap-1.5"
-          >
-            <RefreshCw className={repositoriesQuery.isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={() => setIsImportDialogOpen(true)} className="gap-1.5">
-            <Import className="h-3.5 w-3.5" />
-            Import repository
-          </Button>
-        </div>
-      </div>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description="An overview of your repositories, activity, and platform health."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void repositoriesQuery.refetch()}
+              disabled={repositoriesQuery.isFetching}
+              className="gap-1.5"
+            >
+              <RefreshCw className={repositoriesQuery.isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
+              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setIsImportDialogOpen(true)} className="gap-1.5">
+              <Import className="h-3.5 w-3.5" />
+              Import repository
+            </Button>
+          </>
+        }
+      />
 
       {feedback && (
         <Card>
@@ -182,81 +204,110 @@ export function Dashboard() {
         </Card>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <StatsCard
-          icon={FolderGit2}
-          title="Repositories"
-          value={repositoriesQuery.isLoading ? "—" : formatCount(repositories.length)}
-          subtitle={`${formatCount(indexedRepositories)} ready`}
-        />
-        <StatsCard
-          icon={FileCode2}
-          title="Indexed files"
-          value={repositoriesQuery.isLoading ? "—" : formatCount(totalFiles)}
-          subtitle="Across all repositories"
-        />
-        <StatsCard
-          icon={Layers3}
-          title="Code chunks"
-          value={repositoriesQuery.isLoading ? "—" : formatCount(totalChunks)}
-          subtitle="Ready for retrieval"
-        />
-        <StatsCard
-          icon={Database}
-          title="Embeddings"
-          value={repositoriesQuery.isLoading ? "—" : formatCount(totalEmbeddings)}
-          subtitle="Stored vectors"
-        />
-        <StatsCard
-          icon={Boxes}
-          title="Active jobs"
-          value={repositoriesQuery.isLoading ? "—" : formatCount(repositories.filter((repository) => !isRepositoryReady(repository) && !["failed", "index_failed", "failed_import"].includes(repository.status)).length)}
-          subtitle="Currently processing"
-        />
-      </div>
-
-      {repositoriesQuery.isError && repositories.length === 0 ? (
+      {hasError ? (
         <Card>
-          <CardContent className="p-6 text-sm text-destructive">
-            Unable to load repositories. Please refresh and try again.
-          </CardContent>
-        </Card>
-      ) : repositoriesQuery.isLoading ? (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {["repository-skeleton-1", "repository-skeleton-2", "repository-skeleton-3"].map((key) => (
-            <Card key={key}>
-              <CardHeader className="space-y-2">
-                <Skeleton className="h-5 w-2/3" />
-                <Skeleton className="h-4 w-1/3" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-              </CardContent>
-            </Card>
-          ))}
-        </section>
-      ) : repositories.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">No repositories yet</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col items-start gap-3 pt-0">
-            <p className="text-sm text-muted-foreground">
-              Import a GitHub repository to start building your code intelligence workspace.
-            </p>
-            <Button onClick={() => setIsImportDialogOpen(true)} className="gap-1.5">
-              <Import className="h-4 w-4" />
-              Import repository
-            </Button>
+          <CardContent className="p-0">
+            <ErrorState
+              title="Unable to load repositories"
+              description="Refresh and try again."
+              action={
+                <Button variant="outline" size="sm" onClick={() => void repositoriesQuery.refetch()} className="gap-1.5">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Try again
+                </Button>
+              }
+            />
           </CardContent>
         </Card>
       ) : (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight">Repositories</h2>
-            <span className="text-xs text-muted-foreground">{formatCount(repositories.length)} total</span>
+        <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
+          {isLoading ? (
+            <Card>
+              <CardHeader className="space-y-2">
+                <Skeleton className="h-5 w-1/3" />
+                <Skeleton className="h-4 w-1/2" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Skeleton className="h-8 w-1/4" />
+                <Skeleton className="h-2 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </CardContent>
+            </Card>
+          ) : (
+            <WorkspaceReadiness total={repositories.length} segments={readinessSegments} />
+          )}
+          <RecentActivity
+            activities={isLoading ? [] : activities}
+            className={isLoading ? "opacity-0" : undefined}
+          />
+        </div>
+      )}
+
+      <section aria-label="Indexed data" className="space-y-3">
+        <SectionHeader
+          title="Indexed data"
+          description="Aggregate source files, retrieved chunks, and stored vectors."
+        />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatsCard
+            icon={FileCode2}
+            title="Indexed files"
+            value={isLoading ? "—" : formatCount(totalFiles)}
+            subtitle="Across all repositories"
+          />
+          <StatsCard
+            icon={Boxes}
+            title="Code chunks"
+            value={isLoading ? "—" : formatCount(totalChunks)}
+            subtitle="Ready for retrieval"
+          />
+          <StatsCard
+            icon={Database}
+            title="Embeddings"
+            value={isLoading ? "—" : formatCount(totalEmbeddings)}
+            subtitle="Stored vectors"
+          />
+        </div>
+      </section>
+
+      <section aria-label="Repositories" className="space-y-3">
+        <SectionHeader
+          title="Repositories"
+          description="Open, refresh, or delete an imported repository."
+          action={
+            !isEmpty && (
+              <span className="text-xs text-muted-foreground">{formatCount(repositories.length)} total</span>
+            )
+          }
+        />
+        {isLoading ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {["repository-skeleton-1", "repository-skeleton-2", "repository-skeleton-3"].map((key) => (
+              <Card key={key}>
+                <CardHeader className="space-y-2">
+                  <Skeleton className="h-5 w-2/3" />
+                  <Skeleton className="h-4 w-1/3" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-3/4" />
+                </CardContent>
+              </Card>
+            ))}
           </div>
+        ) : isEmpty ? (
+          <EmptyState
+            icon={LayoutDashboard}
+            title="No repositories yet"
+            description="Import a GitHub repository to start building your code intelligence workspace."
+            action={
+              <Button onClick={() => setIsImportDialogOpen(true)} className="gap-1.5">
+                <Import className="h-4 w-4" />
+                Import repository
+              </Button>
+            }
+          />
+        ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {repositories.map((repository) => (
               <RepositoryCard
@@ -268,20 +319,17 @@ export function Dashboard() {
                 size={formatRepositorySize(repository)}
                 lastUpdated={formatRelativeTime(repository.last_indexed_at)}
                 status={STATUS_MAP[repository.status]}
-                isLoading={repositoriesQuery.isLoading}
+                isLoading={false}
                 onOpen={() => navigate(`/repositories/${repository.id}`)}
                 onRefresh={() => void repositoriesQuery.refetch()}
                 onDelete={() => void handleDelete(repository)}
               />
             ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
-      <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-        <RecentActivity activities={activities} />
-        <HealthStatus />
-      </div>
+      <HealthStatus />
 
       <ImportRepositoryDialog
         open={isImportDialogOpen}

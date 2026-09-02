@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { AlertCircle, Bot, Loader2, MessageSquare, Server } from "lucide-react";
+import { AlertCircle, Bot, Loader2, MessageSquare, Server, Sparkles } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { RepositorySelector } from "@/components/common/RepositorySelector";
+import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRepositories } from "@/hooks/useRepositories";
-import { useRepositoryQuery } from "@/hooks/useQuery";
+import { useAgentTask, useRepositoryQuery } from "@/hooks/useQuery";
+import { Button } from "@/components/ui/button";
 import type { ChatMessage, Citation, QueryResponse } from "@/types";
 import type { RepositoryListItem } from "@/types/repository";
 
@@ -56,6 +58,8 @@ export function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const repositoriesQuery = useRepositories();
   const queryMutation = useRepositoryQuery();
+  const agentMutation = useAgentTask();
+  const [agentMode, setAgentMode] = useState<"chat" | "analyze" | "modify">("chat");
 
   const repositories = useMemo(() => repositoriesQuery.data?.items ?? [], [repositoriesQuery.data]);
   const selectedRepository = useMemo(
@@ -99,12 +103,20 @@ export function Chat() {
     ]);
 
     try {
-      const response = await queryMutation.mutateAsync({
-        repository_id: numericRepositoryId,
-        query: text,
-        top_k: 3,
-      });
-      setMessages((current) => [...current, toAssistantMessage(response)]);
+      if (agentMode !== "chat") {
+        const response = await agentMutation.mutateAsync({ repository_id: numericRepositoryId, task: text, top_k: 3, mode: agentMode });
+        const skillSummary = response.skill_results.map((item) => `- ${item.skill}: ${item.status}`).join("\n");
+        const warnings = response.errors.length ? `\n\nWarnings:\n${response.errors.map((error) => `- ${error}`).join("\n")}` : "";
+        const modification = response.modification;
+        const changedFiles = modification?.files_changed?.length ? `\n\nFiles changed:\n${modification.files_changed.map((file) => `- ${file}`).join("\n")}` : "";
+        const validation = modification?.validation && typeof modification.validation.status === "string" ? `\nValidation: ${modification.validation.status}` : "";
+        const playwright = modification?.playwright && typeof modification.playwright.verified === "boolean" ? `\nPlaywright: ${modification.playwright.verified ? "passed" : "failed"}` : "";
+        const content = `Skills used:\n${skillSummary || "- repository query fallback"}\n\n${response.final_result}${changedFiles}${validation}${playwright}${warnings}`;
+        setMessages((current) => [...current, { id: messageId("assistant"), role: "assistant", content, createdAt: new Date().toISOString(), status: response.status === "completed" ? "complete" : "error" }]);
+      } else {
+        const response = await queryMutation.mutateAsync({ repository_id: numericRepositoryId, query: text, top_k: 3 });
+        setMessages((current) => [...current, toAssistantMessage(response)]);
+      }
     } catch (error) {
       setMessages((current) => [
         ...current,
@@ -130,27 +142,40 @@ export function Chat() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-6xl flex-col gap-5">
-      <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 via-card to-cyan-500/5 p-5 shadow-sm sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 rounded-lg border border-primary/20 bg-primary/10 p-2 text-primary">
-            <Bot className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">AI Chat</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Ask grounded questions about an indexed repository.
-            </p>
-          </div>
-        </div>
-        <RepositorySelector
-          repositories={repositories}
-          value={selectedRepositoryId}
-          onChange={handleRepositoryChange}
-          isLoading={repositoriesQuery.isLoading}
-        />
-        </div>
-      </div>
+      <PageHeader
+        title="AI Chat"
+        description="Ask grounded questions about an indexed repository, route analysis to specialists, or request a validated code change."
+        icon={<Bot className="h-5 w-5" />}
+        actions={
+          <>
+            <div
+              className="flex items-center rounded-lg border border-border/70 bg-muted/40 p-0.5"
+              role="group"
+              aria-label="Agent mode"
+            >
+              {(["chat", "analyze", "modify"] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  type="button"
+                  variant={agentMode === mode ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setAgentMode(mode)}
+                  aria-pressed={agentMode === mode}
+                >
+                  {mode === "modify" && <Sparkles className="h-3.5 w-3.5" />}
+                  {mode[0].toUpperCase() + mode.slice(1)}
+                </Button>
+              ))}
+            </div>
+            <RepositorySelector
+              repositories={repositories}
+              value={selectedRepositoryId}
+              onChange={handleRepositoryChange}
+              isLoading={repositoriesQuery.isLoading}
+            />
+          </>
+        }
+      />
 
       {repositoriesQuery.isLoading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -181,17 +206,22 @@ export function Chat() {
       )}
 
       {selectedRepository && (
-        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-violet-500/20 shadow-[0_12px_50px_-30px_color-mix(in_oklab,var(--primary)_70%,transparent)]">
-          <CardHeader className="border-b border-violet-500/15 bg-violet-500/5 py-4">
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/70">
+          <CardHeader className="border-b py-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <MessageSquare className="h-4 w-4 text-primary" />
               {repositoryLabel(selectedRepository)}
             </CardTitle>
           </CardHeader>
+          {agentMode !== "chat" && (
+            <div className="border-b border-border/60 bg-muted/20 px-4 py-2 text-xs text-muted-foreground">
+              {agentMode === "modify" ? "Modify mode can modify files in this repository, validate the patch, and roll it back if validation fails." : "Analyze mode routes tasks to specialists without modifying repository files."}
+            </div>
+          )}
           <ChatWindow
             messages={messages}
-            isLoading={queryMutation.isPending}
-            disabled={queryMutation.isPending}
+            isLoading={queryMutation.isPending || agentMutation.isPending}
+            disabled={queryMutation.isPending || agentMutation.isPending}
             onSubmit={handleSubmit}
             onSelectPrompt={(prompt) => void handleSubmit(prompt)}
             emptyStateRepositoryName={repositoryLabel(selectedRepository)}

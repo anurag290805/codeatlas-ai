@@ -107,7 +107,7 @@ export const RepositoryIntelligencePanel: FC<RepositoryIntelligencePanelProps> =
       <Card className="border-border/60 bg-card/50 backdrop-blur-sm">
         <CardContent className="space-y-4 p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/25 to-cyan-400/15 text-sm font-semibold text-violet-200">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-semibold text-primary">
               {initials}
             </div>
             <div className="min-w-0">
@@ -141,9 +141,9 @@ export const RepositoryIntelligencePanel: FC<RepositoryIntelligencePanelProps> =
                     key={language.language}
                     className={cn(
                       "h-full",
-                      index === 0 && "bg-violet-400",
-                      index === 1 && "bg-cyan-400",
-                      index === 2 && "bg-fuchsia-400",
+                      index === 0 && "bg-chart-1",
+                      index === 1 && "bg-chart-2",
+                      index === 2 && "bg-chart-5",
                       index === 3 && "bg-muted-foreground/50",
                     )}
                     style={{ width: `${language.percentage}%` }}
@@ -247,7 +247,7 @@ export const RepositoryIntelligencePanel: FC<RepositoryIntelligencePanelProps> =
                     className={cn(
                       "w-full rounded-md px-2 py-2 text-left text-xs transition-colors",
                       conversation.id === activeConversationId
-                        ? "bg-violet-400/10 text-foreground"
+                        ? "bg-primary/10 text-foreground"
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                     )}
                   >
