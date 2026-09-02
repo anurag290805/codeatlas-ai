@@ -230,6 +230,12 @@ def _register_routers(app: FastAPI) -> None:
 # =========================================================================
 
 
+def _version_payload() -> dict[str, str]:
+    """Build the application version payload shared by both health routes."""
+    settings = get_settings()
+    return {"version": API_VERSION, "environment": settings.environment}
+
+
 def _register_health_endpoints(app: FastAPI) -> None:
     """
     Register lightweight health and metadata endpoints.
@@ -237,7 +243,13 @@ def _register_health_endpoints(app: FastAPI) -> None:
     These endpoints deliberately avoid touching the database, vector
     store, or LLM providers so they remain fast and reliable even when
     a downstream dependency is degraded.
+
+    The root-level routes are mirrored under ``api_prefix`` because some
+    serverless gateways (e.g. the Vercel monorepo) only forward
+    ``{api_prefix}/*`` to this service -- a root-level ``/health`` probe
+    would otherwise land on the frontend instead of the backend.
     """
+    api_prefix = get_settings().api_prefix
 
     @app.get("/", tags=["system"], summary="Service banner")
     async def root() -> dict[str, str]:
@@ -252,8 +264,18 @@ def _register_health_endpoints(app: FastAPI) -> None:
     @app.get("/version", tags=["system"], summary="Application version")
     async def version() -> dict[str, str]:
         """Return the running application version and environment."""
-        settings = get_settings()
-        return {"version": API_VERSION, "environment": settings.environment}
+        return _version_payload()
+
+    if api_prefix:
+        @app.get(f"{api_prefix}/health", tags=["system"], summary="Liveness check (prefixed)")
+        async def health_prefixed() -> dict[str, str]:
+            """Prefixed alias of GET /health for prefix-only gateways."""
+            return {"status": "healthy"}
+
+        @app.get(f"{api_prefix}/version", tags=["system"], summary="Application version (prefixed)")
+        async def version_prefixed() -> dict[str, str]:
+            """Prefixed alias of GET /version for prefix-only gateways."""
+            return _version_payload()
 
 
 # =========================================================================

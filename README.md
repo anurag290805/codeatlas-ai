@@ -362,7 +362,7 @@ npm run dev
 | `VITE_API_BASE_URL` | `http://localhost:8000` | Backend origin |
 | `VITE_API_PREFIX` | `/api` | FastAPI router prefix |
 
-System endpoints (e.g. `/health`) stay on the backend origin while feature routes go through the prefixed API client. ⚠️ Never place secrets in `VITE_`-prefixed variables — they ship straight to the browser.
+System probes (`/health`, `/version`) ride the same prefixed API client as feature routes, so they reach the backend behind prefix-only gateways (e.g. Vercel monorepo); the backend also keeps root-level `/health` for load balancers and the Docker healthcheck. ⚠️ Never place secrets in `VITE_`-prefixed variables — they ship straight to the browser.
 
 ---
 
@@ -375,6 +375,8 @@ npm run preview
 ```
 
 Deploy `frontend/dist` to any static host. For Vercel/Netlify: project root `frontend`, build command `npm run build`, publish directory `dist`. Set `VITE_API_BASE_URL` / `VITE_API_PREFIX` in the host's environment settings, and make sure the backend's CORS config allows the deployed frontend origin.
+
+**Required backend env var (separate frontend/backend hosts):** when the frontend and backend live on different origins (e.g. Vercel frontend → Render backend), set `CORS_ALLOWED_ORIGINS` on the backend to the exact deployed frontend origin, e.g. `CORS_ALLOWED_ORIGINS=https://codeatlas-ai.vercel.app`. Without it the browser blocks every cross-origin API response (the frontend shows "Backend: Unavailable" / request timeout even though the backend endpoints return 200).
 
 For a full-stack deploy, run `docker compose up --build` from the repository root — the backend owns SQLite, ChromaDB, indexing, and server-side Gemini access, while the frontend deploys independently.
 
