@@ -38,9 +38,14 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", min_length=1)
     port: Annotated[int, Field(ge=1, le=65_535)] = 8000
     api_prefix: str = "/api"
+    # Production may override this via CORS_ALLOWED_ORIGINS. The default covers
+    # the Vite dev server and the deployed Vercel frontend (which is a separate
+    # origin from the Render backend). With allow_credentials enabled, "*" is
+    # rejected by the validator below.
     cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
+            "https://codeatlas-ai-frontend.vercel.app",
         ]
     )
     cors_allow_credentials: bool = True
