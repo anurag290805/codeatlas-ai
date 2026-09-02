@@ -73,7 +73,11 @@ export function Settings() {
   }, [compact]);
 
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "Same origin";
-  const backendStatus = health.isLoading ? "checking" : health.isError ? "unavailable" : "online";
+  // Prefer the last-known-good probe result over `isError`: a failed
+  // background refetch flips the query to an error state while retaining
+  // the previous successful data, which would otherwise mislabel a live
+  // backend as "unavailable".
+  const backendStatus = health.data ? "online" : health.isLoading ? "checking" : "unavailable";
   const queryStatus = queryHealth.isLoading ? "checking" : queryHealth.isError ? "unavailable" : queryHealth.data?.status ?? "unavailable";
   const themeLabel = theme ? theme.charAt(0).toUpperCase() + theme.slice(1) : "System";
 

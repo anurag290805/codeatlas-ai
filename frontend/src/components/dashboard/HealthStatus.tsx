@@ -75,7 +75,13 @@ export function HealthStatus({ className }: HealthStatusProps) {
   const query = useQueryHealth();
   const liveness = useHealth();
 
-  const backendState: HealthState = liveness.isSuccess
+  // Derive availability from the last-known-good probe result, not from
+  // `isError`. React Query flips a query to `status: "error"` when a
+  // background refetch fails (e.g. a transiently blocked request) while
+  // still retaining the last successful `data`. Relying on `isError` would
+  // therefore report "Backend: Unavailable" even though the most recent
+  // /health probe returned 200 and `liveness.data` still holds it.
+  const backendState: HealthState = liveness.data?.status === "healthy"
     ? "healthy"
     : liveness.isError
       ? "unavailable"
