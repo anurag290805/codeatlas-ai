@@ -63,7 +63,7 @@ export const AIThinkingTimeline: FC<AIThinkingTimelineProps> = ({ stage, stats, 
               <span
                 className={cn(
                   "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
-                  isDone && "text-emerald-400",
+                  isDone && "text-success",
                   isActive && "text-primary",
                   isPending && "text-muted-foreground",
                 )}
@@ -91,7 +91,7 @@ export const AIThinkingTimeline: FC<AIThinkingTimelineProps> = ({ stage, stats, 
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
-            className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/40 pt-2.5 text-[11px] text-emerald-400/90"
+            className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/40 pt-2.5 text-[11px] text-success/90"
           >
             {typeof stats?.filesSearched === "number" && (
               <span className="inline-flex items-center gap-1">

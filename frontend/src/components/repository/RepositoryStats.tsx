@@ -19,31 +19,42 @@ interface RepositoryStatsProps {
   className?: string;
 }
 
+type StatTone = "primary" | "info" | "success" | "warning";
+
 interface StatDefinition {
   key: keyof RepositoryStatistics;
   label: string;
   icon: LucideIcon;
+  tone: StatTone;
 }
 
 const STAT_DEFINITIONS: StatDefinition[] = [
-  { key: "fileCount", label: "Files", icon: Files },
-  { key: "directoryCount", label: "Directories", icon: FolderTree },
-  { key: "commitCount", label: "Commits", icon: GitCommitHorizontal },
-  { key: "contributorCount", label: "Contributors", icon: Users },
-  { key: "languageCount", label: "Languages", icon: Languages },
-  { key: "branchCount", label: "Branches", icon: GitBranch },
-  { key: "chunkCount", label: "AI Chunks", icon: Boxes },
-  { key: "embeddingCount", label: "Embeddings", icon: Sparkles },
+  { key: "fileCount", label: "Files", icon: Files, tone: "info" },
+  { key: "directoryCount", label: "Directories", icon: FolderTree, tone: "info" },
+  { key: "commitCount", label: "Commits", icon: GitCommitHorizontal, tone: "primary" },
+  { key: "contributorCount", label: "Contributors", icon: Users, tone: "info" },
+  { key: "languageCount", label: "Languages", icon: Languages, tone: "warning" },
+  { key: "branchCount", label: "Branches", icon: GitBranch, tone: "info" },
+  { key: "chunkCount", label: "AI Chunks", icon: Boxes, tone: "primary" },
+  { key: "embeddingCount", label: "Embeddings", icon: Sparkles, tone: "success" },
 ];
+
+const STAT_TONE_STYLES: Record<StatTone, string> = {
+  primary: "text-primary",
+  info: "text-info",
+  success: "text-success",
+  warning: "text-warning",
+};
 
 interface StatCardProps {
   label: string;
   value: number | null;
   icon: LucideIcon;
+  tone: StatTone;
   delay: number;
 }
 
-function StatCard({ label, value, icon: Icon, delay }: StatCardProps) {
+function StatCard({ label, value, icon: Icon, tone, delay }: StatCardProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -55,9 +66,9 @@ function StatCard({ label, value, icon: Icon, delay }: StatCardProps) {
           <span className="text-xs font-medium text-muted-foreground">
             {label}
           </span>
-          <Icon className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-foreground" />
+          <Icon className={cn("h-3.5 w-3.5 transition-colors", STAT_TONE_STYLES[tone])} />
         </div>
-        <p className="mt-1.5 text-xl font-semibold tracking-tight text-foreground">
+        <p className="mt-1.5 text-xl font-semibold tracking-tight text-foreground tabular-nums">
           {value == null ? "—" : value.toLocaleString()}
         </p>
       </Card>
@@ -79,6 +90,7 @@ export function RepositoryStats({ stats, className }: RepositoryStatsProps) {
           label={definition.label}
           value={stats[definition.key]}
           icon={definition.icon}
+          tone={definition.tone}
           delay={index * 0.03}
         />
       ))}

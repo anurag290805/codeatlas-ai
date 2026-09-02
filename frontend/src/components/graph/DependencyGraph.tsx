@@ -275,9 +275,10 @@ const DependencyGraphCanvas: FC<DependencyGraphProps> = ({
         {showGrid && (
           <Background
             variant={BackgroundVariant.Dots}
-            gap={20}
-            size={1}
-            className="opacity-40"
+            gap={22}
+            size={1.25}
+            color="var(--border)"
+            className="opacity-80"
           />
         )}
         {showControls && (

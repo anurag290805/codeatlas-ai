@@ -106,7 +106,7 @@ export function Search() {
                 key={value}
                 type="button"
                 onClick={() => setScope(value)}
-                className={`rounded-full border px-3 py-1 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${scope === value ? "border-primary/40 bg-primary/10 text-foreground" : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                className={`rounded-full border px-3 py-1 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${scope === value ? "border-primary/40 bg-primary/16 text-primary dark:bg-primary/20 colourful:bg-primary/18" : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                 aria-pressed={scope === value}
               >
                 {value}

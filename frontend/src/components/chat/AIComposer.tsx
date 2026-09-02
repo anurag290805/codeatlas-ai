@@ -283,10 +283,10 @@ export const AIComposer: FC<AIComposerProps> = ({
               variant="outline"
               className={cn(
                 "gap-1 border-border/60 font-normal",
-                isIndexed ? "text-emerald-400" : "text-muted-foreground",
+                isIndexed ? "text-success" : "text-muted-foreground",
               )}
             >
-              <Circle className={cn("h-2 w-2 fill-current", isIndexed ? "text-emerald-400" : "text-muted-foreground")} />
+              <Circle className={cn("h-2 w-2 fill-current", isIndexed ? "text-success" : "text-muted-foreground")} />
               {isIndexed ? "Indexed" : "Indexing"}
             </Badge>
           )}

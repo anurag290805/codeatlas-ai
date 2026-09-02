@@ -139,9 +139,9 @@ export function Dashboard() {
 
   const readinessSegments: ReadinessSegment[] = useMemo(
     () => [
-      { label: "Ready", count: indexedRepositories, color: "bg-emerald-500", icon: CheckCircle2 },
-      { label: "Processing", count: processingRepositories, color: "bg-amber-500", icon: Loader2 },
-      { label: "Failed", count: failedRepositories, color: "bg-rose-500", icon: CircleAlert },
+      { label: "Ready", count: indexedRepositories, color: "bg-success", icon: CheckCircle2 },
+      { label: "Processing", count: processingRepositories, color: "bg-warning", icon: Loader2 },
+      { label: "Failed", count: failedRepositories, color: "bg-danger", icon: CircleAlert },
     ],
     [indexedRepositories, processingRepositories, failedRepositories],
   );
@@ -254,18 +254,21 @@ export function Dashboard() {
             title="Indexed files"
             value={isLoading ? "—" : formatCount(totalFiles)}
             subtitle="Across all repositories"
+            tone="info"
           />
           <StatsCard
             icon={Boxes}
             title="Code chunks"
             value={isLoading ? "—" : formatCount(totalChunks)}
             subtitle="Ready for retrieval"
+            tone="primary"
           />
           <StatsCard
             icon={Database}
             title="Embeddings"
             value={isLoading ? "—" : formatCount(totalEmbeddings)}
             subtitle="Stored vectors"
+            tone="success"
           />
         </div>
       </section>

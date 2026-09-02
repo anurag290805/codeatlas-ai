@@ -40,7 +40,7 @@ export function WorkspaceReadiness({
             Indexing status across your workspace
           </p>
         </div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
           {total > 0 ? <CheckCircle2 className="h-5 w-5" /> : <Loader2 className="h-5 w-5" />}
         </span>
       </CardHeader>
@@ -88,7 +88,7 @@ export function WorkspaceReadiness({
             })}
           </ul>
         ) : (
-          <p className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
+          <p className="flex items-center gap-2 text-xs text-warning">
             <CircleAlert className="h-3.5 w-3.5" />
             No repositories — import one to begin indexing.
           </p>

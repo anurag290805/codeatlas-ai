@@ -53,10 +53,10 @@ function formatRelativeTime(iso?: string): string {
 }
 
 const HEALTH_COLOR: Record<string, string> = {
-  excellent: "text-emerald-400",
-  good: "text-emerald-400",
-  fair: "text-amber-400",
-  "needs attention": "text-rose-400",
+  excellent: "text-success",
+  good: "text-success",
+  fair: "text-warning",
+  "needs attention": "text-danger",
 };
 
 /**
@@ -173,12 +173,12 @@ export const RepositoryMap: FC<RepositoryMapProps> = ({ data, onOpenGraph, class
               {formatBytes(repository.sizeBytes)}
             </Badge>
             {isIndexing ? (
-              <Badge variant="outline" className="gap-1 border-transparent bg-amber-500/10 font-normal text-amber-400">
+              <Badge variant="outline" className="gap-1 border-transparent bg-warning/10 font-normal text-warning">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Indexing
               </Badge>
             ) : repository.status === "ready" ? (
-              <Badge variant="outline" className="gap-1 border-transparent bg-emerald-500/10 font-normal text-emerald-400">
+              <Badge variant="outline" className="gap-1 border-transparent bg-success/10 font-normal text-success">
                 <Sparkles className="h-3 w-3" />
                 Ready
               </Badge>
@@ -245,7 +245,7 @@ export const RepositoryMap: FC<RepositoryMapProps> = ({ data, onOpenGraph, class
                 icon={Coins}
                 label="Token usage"
                 value={`${tokenUsage.used.toLocaleString()} / ${tokenUsage.budget.toLocaleString()}`}
-                accent={tokenUsage.used / tokenUsage.budget > 0.85 ? "text-amber-400" : undefined}
+                accent={tokenUsage.used / tokenUsage.budget > 0.85 ? "text-warning" : undefined}
               />
             )}
             {health && (

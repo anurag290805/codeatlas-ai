@@ -81,9 +81,9 @@ export const CodeBlock: FC<CodeBlockProps> = ({
   };
 
   return (
-    <div className={cn("overflow-hidden rounded-xl border border-border/60 bg-[#0b0c10]", className)}>
+    <div className={cn("overflow-hidden rounded-xl border border-border/60 bg-[#0a0d15]", className)}>
       {/* Sticky toolbar */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/50 bg-[#0f1015]/95 px-3 py-1.5 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/50 bg-[#0e121b]/95 px-3 py-1.5 backdrop-blur-sm">
         {filename && <span className="truncate text-xs font-medium text-foreground/80">{filename}</span>}
         {language && (
           <span className="shrink-0 rounded-md bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -109,7 +109,7 @@ export const CodeBlock: FC<CodeBlockProps> = ({
             onClick={handleCopy}
             aria-label="Copy code"
           >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
           </Button>
         </span>
       </div>
@@ -161,8 +161,8 @@ export const CodeBlock: FC<CodeBlockProps> = ({
                   className={cn(
                     "transition-colors",
                     isHighlighted && "bg-primary/10",
-                    isMatch && "bg-amber-400/10",
-                    isJumpTarget && "bg-sky-400/20",
+                    isMatch && "bg-warning/10",
+                    isJumpTarget && "bg-info/20",
                   )}
                 >
                   <td className="select-none whitespace-nowrap px-3 py-0 text-right text-muted-foreground/50">

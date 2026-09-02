@@ -92,7 +92,7 @@ export function Settings() {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
               <Palette className="h-4 w-4" />
             </span>
             <div>
@@ -119,7 +119,7 @@ export function Settings() {
 
         <Card>
           <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
               <Brain className="h-4 w-4" />
             </span>
             <div>
@@ -157,7 +157,7 @@ export function Settings() {
 
         <Card>
           <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
               <Activity className="h-4 w-4" />
             </span>
             <div>
@@ -192,7 +192,7 @@ export function Settings() {
 
         <Card>
           <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
               <Code2 className="h-4 w-4" />
             </span>
             <div>

@@ -43,6 +43,8 @@ interface MetricDefinition {
   label: string;
   icon: FC<{ className?: string }>;
   value: string;
+  /** Accent tone for the leading icon. */
+  tone: "primary" | "info" | "success" | "warning" | "danger";
   /** Secondary metrics render smaller and denser than the headline tier. */
   featured?: boolean;
 }
@@ -64,6 +66,7 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       label: "Total files",
       icon: FileText,
       value: formatCompactNumber(data.totalFiles),
+      tone: "info",
       featured: true,
     },
     {
@@ -71,6 +74,7 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       label: "Languages detected",
       icon: Languages,
       value: formatCompactNumber(data.languagesDetected),
+      tone: "warning",
       featured: true,
     },
     {
@@ -78,6 +82,7 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       label: "AI chunks",
       icon: Boxes,
       value: formatCompactNumber(data.aiChunks),
+      tone: "primary",
       featured: true,
     },
     {
@@ -85,6 +90,7 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       label: "Repository size",
       icon: HardDrive,
       value: formatOptionalBytes(data.repositorySizeBytes),
+      tone: "success",
       featured: true,
     },
     {
@@ -92,42 +98,49 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       label: "Repositories",
       icon: FolderTree,
       value: formatCompactNumber(data.totalRepositories),
+      tone: "info",
     },
     {
       key: "folders",
       label: "Total folders",
       icon: FolderTree,
       value: formatOptionalNumber(data.totalFolders),
+      tone: "info",
     },
     {
       key: "symbols",
       label: "Total symbols",
       icon: Code2,
       value: formatOptionalNumber(data.totalSymbols),
+      tone: "primary",
     },
     {
       key: "embeddings",
       label: "Embeddings",
       icon: Sparkles,
       value: formatCompactNumber(data.embeddings),
+      tone: "success",
     },
     {
       key: "nodes",
       label: "Dependency nodes",
       icon: Waypoints,
       value: formatOptionalNumber(data.dependencyNodes),
+      tone: "primary",
     },
     {
       key: "processing",
       label: "Indexed",
       icon: Sparkles,
       value: `${formatCompactNumber(data.indexedRepositories)}/${formatCompactNumber(data.totalRepositories)}`,
+      tone: "success",
     },
     {
       key: "failed",
       label: "Failed processing",
       icon: Waypoints,
       value: formatCompactNumber(data.failedRepositories),
+      tone: "danger",
     },
   ];
 
@@ -163,12 +176,24 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
   );
 };
 
+const METRIC_TONE_STYLES: Record<
+  MetricDefinition["tone"],
+  { icon: string; chip: string }
+> = {
+  primary: { icon: "text-primary", chip: "bg-primary/10" },
+  info: { icon: "text-info", chip: "bg-info/10" },
+  success: { icon: "text-success", chip: "bg-success/10" },
+  warning: { icon: "text-warning", chip: "bg-warning/10" },
+  danger: { icon: "text-danger", chip: "bg-danger/10" },
+};
+
 const MetricCard: FC<{
   metric: MetricDefinition;
   index: number;
   compact?: boolean;
 }> = ({ metric, index, compact = false }) => {
   const Icon = metric.icon;
+  const toneStyle = METRIC_TONE_STYLES[metric.tone];
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -196,8 +221,8 @@ const MetricCard: FC<{
                   {metric.value}
                 </p>
               </div>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted/60">
-                <Icon className="h-4 w-4 text-muted-foreground" />
+              <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", toneStyle.chip)}>
+                <Icon className={cn("h-4 w-4", toneStyle.icon)} />
               </div>
             </>
           )}

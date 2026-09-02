@@ -73,7 +73,7 @@ const ConversationRow: FC<{
           onKeyDown={handleKeyDown}
           className="min-w-0 flex-1 bg-transparent text-xs text-foreground focus:outline-none"
         />
-        <button type="button" onClick={commitRename} className="text-emerald-400 hover:text-emerald-300">
+        <button type="button" onClick={commitRename} className="text-success hover:text-success/80">
           <Check className="h-3 w-3" />
         </button>
         <button type="button" onClick={() => setRenaming(false)} className="text-muted-foreground hover:text-foreground">

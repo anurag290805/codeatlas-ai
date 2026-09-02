@@ -18,9 +18,9 @@ function StatusPill({
 }) {
   const styles = {
     healthy:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+      "border-success/35 bg-success/16 text-success dark:bg-success/20 dark:border-success/40 colourful:bg-success/18",
     degraded:
-      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+      "border-warning/35 bg-warning/16 text-warning dark:bg-warning/20 dark:border-warning/40 colourful:bg-warning/18",
     unavailable: "border-border bg-muted text-muted-foreground",
   };
 
@@ -56,9 +56,9 @@ function Signal({
           className={cn(
             "h-2 w-2 rounded-full",
             state === "healthy"
-              ? "bg-emerald-500"
+              ? "bg-success"
               : state === "degraded"
-                ? "bg-amber-500"
+                ? "bg-warning"
                 : "bg-muted-foreground",
           )}
         />
@@ -173,12 +173,12 @@ export function HealthStatus({ className }: HealthStatusProps) {
             Refreshing platform signals…
           </div>
         ) : queryState === "healthy" ? (
-          <p className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+          <p className="flex items-center gap-2 text-xs text-success">
             <CheckCircle2 className="h-3.5 w-3.5" />
             {query.data?.llm_provider} is ready for grounded answers.
           </p>
         ) : (
-          <p className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
+          <p className="flex items-center gap-2 text-xs text-warning">
             <AlertCircle className="h-3.5 w-3.5" />
             {queryMessage ??
               "AI answers may be unavailable until the provider is ready."}

@@ -126,7 +126,7 @@ export const RepositoryIntelligencePanel: FC<RepositoryIntelligencePanelProps> =
               {formatBytes(repository.sizeBytes)}
             </Badge>
             {repository.status === "ready" && (
-              <Badge variant="outline" className="gap-1 border-transparent bg-emerald-500/10 font-normal text-emerald-400">
+              <Badge variant="outline" className="gap-1 border-transparent bg-success/10 font-normal text-success">
                 <Sparkles className="h-3 w-3" />
                 Ready
               </Badge>

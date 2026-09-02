@@ -208,10 +208,10 @@ export function Chat() {
       {selectedRepository && (
         <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/70">
           <CardHeader className="border-b py-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <MessageSquare className="h-4 w-4 text-primary" />
-              {repositoryLabel(selectedRepository)}
-            </CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MessageSquare className="h-4 w-4 text-primary" />
+                {repositoryLabel(selectedRepository)}
+              </CardTitle>
           </CardHeader>
           {agentMode !== "chat" && (
             <div className="border-b border-border/60 bg-muted/20 px-4 py-2 text-xs text-muted-foreground">

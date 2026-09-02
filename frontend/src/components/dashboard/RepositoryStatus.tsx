@@ -42,51 +42,51 @@ const STATUS_CONFIG: Record<
     label: "Index Failed",
     icon: AlertCircle,
     className:
-      "border-transparent bg-rose-500/10 text-rose-600 dark:text-rose-400",
+      "border-transparent bg-danger/10 text-danger",
   },
 
   failed_import: {
     label: "Import Failed",
     icon: AlertCircle,
     className:
-      "border-transparent bg-rose-500/10 text-rose-600 dark:text-rose-400",
+      "border-transparent bg-danger/10 text-danger",
   },
 
   deleting: {
     label: "Deleting",
     icon: AlertCircle,
     className:
-      "border-transparent bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      "border-transparent bg-warning/10 text-warning",
   },
   importing: {
     label: "Importing",
     icon: Download,
-    className: "border-transparent bg-primary/10 text-primary",
+    className: "border-transparent bg-info/10 text-info",
   },
   cloning: {
     label: "Cloning",
     icon: GitBranch,
-    className: "border-transparent bg-primary/10 text-primary",
+    className: "border-transparent bg-info/10 text-info",
   },
   indexing: {
     label: "Indexing",
     icon: Layers,
-    className: "border-transparent bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    className: "border-transparent bg-warning/10 text-warning",
   },
   embedding: {
     label: "Embedding",
     icon: Sparkles,
-    className: "border-transparent bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    className: "border-transparent bg-warning/10 text-warning",
   },
   ready: {
     label: "Ready",
     icon: CheckCircle2,
-    className: "border-transparent bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    className: "border-transparent bg-success/10 text-success",
   },
   error: {
     label: "Error",
     icon: AlertCircle,
-    className: "border-transparent bg-rose-500/10 text-rose-600 dark:text-rose-400",
+    className: "border-transparent bg-danger/10 text-danger",
   },
 };
 

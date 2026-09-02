@@ -11,14 +11,14 @@ import { useSecurity } from "@/hooks/useIntelligence";
 const SEVERITIES: Array<{
   key: string;
   label: string;
-  badge: "destructive" | "secondary" | "outline";
+  badge: "destructive" | "warning" | "secondary" | "outline";
   dot: string;
   bar: string;
 }> = [
-  { key: "Critical", label: "Critical", badge: "destructive", dot: "bg-rose-500", bar: "bg-rose-500" },
-  { key: "High", label: "High", badge: "destructive", dot: "bg-orange-500", bar: "bg-orange-500" },
-  { key: "Moderate", label: "Moderate", badge: "secondary", dot: "bg-amber-500", bar: "bg-amber-500" },
-  { key: "Low", label: "Low", badge: "outline", dot: "bg-sky-500", bar: "bg-sky-500" },
+  { key: "Critical", label: "Critical", badge: "destructive", dot: "bg-danger", bar: "bg-danger" },
+  { key: "High", label: "High", badge: "warning", dot: "bg-warning", bar: "bg-warning" },
+  { key: "Moderate", label: "Moderate", badge: "warning", dot: "bg-warning", bar: "bg-warning" },
+  { key: "Low", label: "Low", badge: "outline", dot: "bg-info", bar: "bg-info" },
   { key: "Unknown", label: "Unknown", badge: "outline", dot: "bg-muted-foreground", bar: "bg-muted-foreground" },
 ];
 
@@ -122,7 +122,7 @@ export default function Security() {
             <CardContent className="space-y-4 p-0">
               {data.vulnerabilities.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-success/10 text-success">
                     <ShieldCheck className="h-5 w-5" />
                   </span>
                   <p className="text-sm font-medium text-foreground">No known vulnerabilities</p>
@@ -168,7 +168,7 @@ export default function Security() {
 
                           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                             {vulnerability.fixed_versions.length > 0 && (
-                              <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                              <p className="text-xs text-success">
                                 Fixed in {vulnerability.fixed_versions.join(", ")}
                               </p>
                             )}
