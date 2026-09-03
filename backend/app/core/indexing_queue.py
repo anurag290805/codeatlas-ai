@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from queue import Full, Queue
 from threading import Lock, Thread
-from datetime import datetime, timedelta, timezone
 
 from app.db.database import db_session
 from app.utils.logger import get_logger
@@ -108,20 +107,30 @@ def queued_job_count() -> int:
 
 
 def recover_indexing_jobs() -> int:
-    """Requeue durable pending jobs and reset jobs interrupted by a restart."""
+    """Requeue durable pending jobs and reset jobs interrupted by a restart.
+
+    Recovery runs only during application startup, when this process's
+    worker threads are brand new. Any repository still marked "pending" or
+    "indexing" is therefore orphaned: the worker thread that owned it
+    belonged to the previous process, which is gone. It must be re-enqueued
+    or it stays stuck in "indexing" forever -- the UI would show an
+    import that never completes and never fails.
+
+    A heartbeat guard would be wrong here. A fresh heartbeat only proves
+    the previous process was alive recently; it does not make that
+    process's threads any more likely to still be running after a
+    restart/deploy. (If the deployment ever runs more than one app
+    instance, re-enqueuing a job another instance is actively processing
+    is safe by construction: every generation writes to a uniquely named
+    staged collection and publish is atomic, so the last publisher wins.)
+    """
     from sqlalchemy import select
     from app.models.db_models import Repository
 
     recovered = 0
-    now = datetime.now(timezone.utc)
     with db_session() as db:
         rows = db.execute(select(Repository).where(Repository.indexing_status.in_(["pending", "indexing"]))).scalars().all()
         for repository in rows:
-            heartbeat = repository.indexing_heartbeat_at
-            if repository.indexing_status == "indexing" and heartbeat and heartbeat.tzinfo is None:
-                heartbeat = heartbeat.replace(tzinfo=timezone.utc)
-            if repository.indexing_status == "indexing" and heartbeat and now - heartbeat < timedelta(minutes=20):
-                continue
             if repository.indexing_status == "indexing":
                 repository.indexing_status = "pending"
                 repository.indexing_stage = "queued"

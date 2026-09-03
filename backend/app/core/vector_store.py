@@ -31,7 +31,18 @@ logger = get_logger(__name__)
 # Collection name prefix applied to every repository-scoped collection. This
 # keeps the naming strategy scalable and namespaced as new collection types
 # (e.g. cross-repository indexes) are introduced in the future.
-_COLLECTION_NAME_PREFIX = "codeatlas_repo"
+#
+# ChromaDB rejects collection names longer than 63 characters (and only
+# allows alphanumerics, underscores, and hyphens). Every component below is
+# sized so a fully qualified name -- including the staged-generation suffix
+# appended by ``stage_embeddings`` -- always stays well under that limit.
+_COLLECTION_NAME_PREFIX = "codeatlas"
+# Length of the per-workspace namespace hash embedded in each collection name.
+# 9 hex characters (36 bits) is enough to isolate workspaces while keeping
+# the qualified name short. A 10-char namespace pushes the fully qualified
+# staged name (with 32-char UUID suffix) to 64 chars, exceeding ChromaDB's
+# 63-char limit. 9 chars brings it to exactly 63.
+_NAMESPACE_HASH_LENGTH = 9
 
 # Metadata key used to store non-scalar chunk metadata as a JSON string,
 # since most vector database backends only accept flat scalar metadata.
@@ -511,14 +522,20 @@ class VectorStoreService:
 
     @staticmethod
     def _collection_name_for(repository_id: str, workspace_id: str | None = None) -> str:
-        """Derive the collection name for a repository's isolated index."""
-        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+        """Derive the collection name for a repository's isolated index.
+
+        Total length must stay under ChromaDB's 63-char limit. The pattern is:
+        codeatlas_{10-char-ns}_{repo_id}_{staged-suffix}
+        Where staged-suffix is appended by ``stage_embeddings`` (32-char hex UUID).
+        Max: 8 + 1 + 10 + 1 + 10 (repo_id) + 1 + 32 = 63 chars exactly.
+        """
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
         return f"{_COLLECTION_NAME_PREFIX}_{namespace}_{repository_id}"
 
     def _active_collection_name(self, repository_id: str, workspace_id: str | None = None) -> str:
         """Resolve the durable collection pointer, with legacy-name fallback."""
         settings = get_settings()
-        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
         pointer = settings.chroma_persist_directory / f"active_{namespace}_{repository_id}.json"
         try:
             payload = json.loads(pointer.read_text(encoding="utf-8"))
@@ -547,7 +564,7 @@ class VectorStoreService:
         """Publish a staged generation by atomically replacing its pointer."""
         settings = get_settings()
         settings.chroma_persist_directory.mkdir(parents=True, exist_ok=True)
-        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
         pointer = settings.chroma_persist_directory / f"active_{namespace}_{repository_id}.json"
         old_name = self._active_collection_name(repository_id, workspace_id)
         temporary = pointer.with_suffix(f".json.tmp-{uuid.uuid4().hex}")
@@ -673,7 +690,7 @@ class VectorStoreService:
             return
         self._store.delete_collection(collection_name)
         try:
-            namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:24] if workspace_id else "legacy"
+            namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
             (get_settings().chroma_persist_directory / f"active_{namespace}_{repository_id}.json").unlink(missing_ok=True)
         except OSError:
             logger.warning("Failed to remove active collection pointer repository_id=%s", repository_id)

@@ -24,7 +24,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "w-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8",
+        "w-full overflow-y-auto px-4 py-4 sm:px-6 lg:px-8",
         constrainWidth && "mx-auto max-w-screen-2xl",
         fullHeight && "flex h-full flex-col",
         className,

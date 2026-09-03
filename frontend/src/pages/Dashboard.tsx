@@ -174,27 +174,21 @@ export function Dashboard() {
   const isEmpty = !isLoading && !hasError && repositories.length === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Dashboard"
         description="An overview of your repositories, activity, and platform health."
         actions={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void repositoriesQuery.refetch()}
-              disabled={repositoriesQuery.isFetching}
-              className="gap-1.5"
-            >
-              <RefreshCw className={repositoriesQuery.isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
-              Refresh
-            </Button>
-            <Button size="sm" onClick={() => setIsImportDialogOpen(true)} className="gap-1.5">
-              <Import className="h-3.5 w-3.5" />
-              Import repository
-            </Button>
-          </>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void repositoriesQuery.refetch()}
+            disabled={repositoriesQuery.isFetching}
+            className="gap-1.5"
+          >
+            <RefreshCw className={repositoriesQuery.isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
+            Refresh
+          </Button>
         }
       />
 

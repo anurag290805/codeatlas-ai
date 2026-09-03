@@ -123,8 +123,8 @@ export function HealthStatus({ className }: HealthStatusProps) {
           }
         />
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <CardContent className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Signal
             label="Backend"
             value={backendState === "healthy" ? "Available" : backendState === "degraded" ? "Waking up…" : "Unavailable"}

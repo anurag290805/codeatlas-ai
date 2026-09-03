@@ -1,11 +1,10 @@
 // src/components/layout/Navbar.tsx
-import { Menu, Plus, Search as SearchIcon } from "lucide-react";
+import { Menu, Search as SearchIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
-import { useGlobalImport } from "@/components/common/useGlobalImport";
 
 interface NavbarProps {
   title: string;
@@ -15,12 +14,11 @@ interface NavbarProps {
 
 /**
  * Sticky top navigation bar. Shows the current page title, a global
- * search field, and quick actions (import, theme). Deliberately avoids
+ * search field, and quick actions (theme). Deliberately avoids
  * dead affordances — every control responds to user intent.
  */
 export function Navbar({ title, onMenuClick }: NavbarProps) {
   const navigate = useNavigate();
-  const { openImport } = useGlobalImport();
   const [query, setQuery] = useState("");
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -58,19 +56,6 @@ export function Navbar({ title, onMenuClick }: NavbarProps) {
       </form>
 
       <div className="ml-auto flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={openImport} className="hidden gap-1.5 sm:inline-flex">
-          <Plus className="h-4 w-4" />
-          Import
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="sm:hidden"
-          onClick={openImport}
-          aria-label="Import repository"
-        >
-          <Plus className="h-5 w-5" />
-        </Button>
         <ThemeToggle />
       </div>
     </header>

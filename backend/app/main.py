@@ -130,11 +130,18 @@ async def _request_context_middleware(request: Request, call_next):
 
     response = await call_next(request)
 
-    workspace_id = ensure_workspace_cookie(request)
-    if not request.cookies.get(WORKSPACE_COOKIE) or getattr(request.state, "workspace_cookie_value", None):
+    # Only set a workspace cookie if no router established a workspace.
+    # Every router depends on `ensure_workspace` which creates the Workspace
+    # row and sets a 3-part cookie (workspace.timestamp.signature). If a
+    # router ran, `request.state.workspace_id` is set. If the router also
+    # wrote a cookie, we should not overwrite it with a potentially
+    # different format or value.
+    router_established_workspace = getattr(request.state, "workspace_id", None)
+    if not router_established_workspace and not request.cookies.get(WORKSPACE_COOKIE):
+        workspace_id = ensure_workspace_cookie(request)
         response.set_cookie(
             WORKSPACE_COOKIE,
-            getattr(request.state, "workspace_cookie_value", workspace_cookie_value(workspace_id)),
+            workspace_cookie_value(workspace_id),
             httponly=True,
                 secure=getattr(get_settings(), "environment", "development") in {"production", "staging"},
             samesite="lax",
