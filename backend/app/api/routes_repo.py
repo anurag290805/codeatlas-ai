@@ -31,6 +31,7 @@ from app.core.graph_builder import get_graph_service
 from app.core.indexing_queue import enqueue_indexing_job
 from app.core.parser import RepositoryParseError, RepositoryParser
 from app.core.vector_store import VectorStoreError, VectorStoreService
+from app.core.workspace import ensure_workspace
 from app.db import crud
 from app.db.database import get_db
 from app.models.db_models import Repository
@@ -39,7 +40,16 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/repositories", tags=["repositories"])
+# `ensure_workspace` materializes the Workspace row for the request-scoped
+# workspace before any handler runs. Every other router depends on it; this
+# one previously did not, so importing a repository INSERTed a row with a
+# workspace_id that had no matching row in `workspaces`, violating the
+# foreign key on PostgreSQL and returning HTTP 500.
+router = APIRouter(
+    prefix="/repositories",
+    tags=["repositories"],
+    dependencies=[Depends(ensure_workspace)],
+)
 
 
 # =========================================================================

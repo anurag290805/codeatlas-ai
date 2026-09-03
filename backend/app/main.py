@@ -171,7 +171,30 @@ def _error_response(request: Request, status_code: int, message: str, detail: ob
         "status_code": status_code,
         "correlation_id": correlation_id,
     }
-    return JSONResponse(status_code=status_code, content=payload)
+    response = JSONResponse(status_code=status_code, content=payload)
+    _apply_cors_headers(request, response)
+    return response
+
+
+def _apply_cors_headers(request: Request, response: JSONResponse) -> None:
+    """Mirror the CORSMiddleware's allow-origin logic on error responses.
+
+    Starlette raises unhandled exceptions through the CORS middleware, so a
+    response produced by the generic ``Exception`` handler (and the FastAPI
+    validation handler) bypasses the middleware and ships without CORS
+    headers. A browser then blocks the cross-origin error body and surfaces
+    it as a generic "Network Error", hiding the real HTTP status. Adding the
+    same allow-origin/credentials headers here keeps error responses readable
+    to the frontend for permitted origins.
+    """
+    settings = get_settings()
+    origin = request.headers.get("origin")
+    if not origin or origin not in settings.cors_allowed_origins:
+        return
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers.setdefault("Vary", "Origin")
+    if settings.cors_allow_credentials:
+        response.headers["Access-Control-Allow-Credentials"] = "true"
 
 
 def _register_exception_handlers(app: FastAPI) -> None:
