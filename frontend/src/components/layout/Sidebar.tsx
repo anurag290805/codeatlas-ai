@@ -120,11 +120,11 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       >
         <div className="flex h-14 items-center justify-between border-b border-sidebar-border bg-gradient-to-r from-primary/[0.04] to-transparent px-4">
           <span className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/20">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center">
               <img
                 src="/codeatlas-logo.png"
                 alt=""
-                className="h-5 w-5 object-contain"
+                className="h-8 w-8 object-contain"
               />
             </span>
             <span className="text-sidebar-foreground">
