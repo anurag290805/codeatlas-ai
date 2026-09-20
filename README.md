@@ -189,13 +189,13 @@ Config resolution order: repository-root `.env` → `backend/.env` (wins on conf
 
 > 🔒 Never commit `.env` files, credentials, databases, vector stores, or model caches.
 
-For Render, create/attach a Render PostgreSQL database and configure its
-internal connection string as the backend service's `DATABASE_URL` environment
-variable. The backend selects PostgreSQL whenever that variable is set to a
+For Render, configure the Supabase PostgreSQL connection string as the backend
+service's `DATABASE_URL` environment variable and enable the `vector` extension
+in Supabase. The backend selects PostgreSQL whenever that variable is set to a
 PostgreSQL URL; otherwise it uses the local SQLite file. Startup only creates
 missing tables and checks connectivity—it does not reset or overwrite existing
-production data. Repository records and indexing metadata therefore remain in
-PostgreSQL across deploys and restarts.
+production data. Repository records, indexing metadata, and vectors therefore
+remain in Supabase across deploys and restarts.
 
 ---
 
@@ -209,7 +209,19 @@ DEBUG=true python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 API available at `http://localhost:8000`. `GET /api/query/health` reports RAG and Gemini readiness. All feature routers live under the `/api` prefix.
 
-For Render, set `GEMINI_API_KEY`, `GEMINI_MODEL`, and a production `CORS_ALLOWED_ORIGINS` containing the deployed frontend origin. Keep all Gemini variables on the backend service only. Sentence Transformer embeddings and Chroma collections are unchanged, so no re-indexing is required.
+For Render, use the backend root directory (`backend`), build with
+`pip install -r requirements.txt`, and start with
+`uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Set `GEMINI_API_KEY`,
+`GEMINI_MODEL`, `WORKSPACE_SESSION_SECRET`, and a production
+`CORS_ALLOWED_ORIGINS` containing the exact deployed frontend origin. Keep all
+Gemini variables on the backend service only. Embeddings use the configured
+Gemini provider and vectors use Supabase pgvector.
+
+The Render Free filesystem is ephemeral. Repository clones are intentionally
+used as a disposable working cache: an import can clone and index a public
+GitHub repository in the running service, while metadata and vectors persist in
+Supabase. After a restart, pending imports are recovered and cloned again; a
+repository's file-preview endpoints require the clone to be present locally.
 
 ### Optional external API evaluation
 
