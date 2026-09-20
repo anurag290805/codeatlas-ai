@@ -23,4 +23,5 @@ pytest==8.3.4
 pytest-mock==3.14.0
 pytest-cov==6.0.0
 # google-genai SDK for Gemini embeddings (2026-09-18 current version)
-google-genai==1.0.0psycopg2-binary==2.9.13
+google-genai==1.0.0
+psycopg2-binary==2.9.13
