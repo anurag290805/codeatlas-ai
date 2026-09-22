@@ -591,13 +591,20 @@ class CodeParser:
     file.
     """
 
-    def __init__(self, tree_sitter_languages_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        tree_sitter_languages_dir: Path | None = None,
+        max_file_bytes: int | None = None,
+    ) -> None:
         """Initialize the parser with a directory of compiled grammars.
 
         Args:
             tree_sitter_languages_dir: Directory containing the compiled
                 Tree-sitter grammar library. Defaults to the path
                 configured in application settings.
+            max_file_bytes: Maximum source file size to parse, in bytes.
+                Files larger than this limit are skipped. Defaults to the
+                configured application setting.
         """
         settings = get_settings()
         self._languages_dir = tree_sitter_languages_dir or settings.TREE_SITTER_LANGUAGES_DIR
@@ -605,6 +612,7 @@ class CodeParser:
         # override. The default path may be absent because the supported
         # package already bundles the grammars.
         self._allow_packaged_grammars = tree_sitter_languages_dir is None
+        self._max_file_bytes = max_file_bytes or settings.parser_max_file_bytes
         self._parsers: dict[ProgrammingLanguage, Parser] = {}
         self._extractors: dict[ProgrammingLanguage, LanguageExtractor] = {
             spec.language: spec.extractor_factory() for spec in _LANGUAGE_SPECS
@@ -655,9 +663,14 @@ class CodeParser:
 
             file_result = self.parse_file(repository_id, file_path, repository_root, spec)
             if file_result.error is not None:
-                files_failed += 1
-                errors.append(f"{file_result.relative_path}: {file_result.error}")
-                logger.warning("Failed to parse file: %s", file_result.relative_path)
+                # Distinguish size-limit skips (expected) from genuine parse failures.
+                if "exceeds configured size limit" in file_result.error:
+                    files_skipped += 1
+                    logger.info("Skipped oversized file: %s", file_result.relative_path)
+                else:
+                    files_failed += 1
+                    errors.append(f"{file_result.relative_path}: {file_result.error}")
+                    logger.warning("Failed to parse file: %s", file_result.relative_path)
                 continue
 
             files_parsed += 1
@@ -716,6 +729,25 @@ class CodeParser:
                 relative_path=relative_path,
                 programming_language=None,
                 error="Unsupported file extension.",
+            )
+
+        # Skip files exceeding the configured size limit without reading them.
+        try:
+            file_size = file_path.stat().st_size
+        except OSError as exc:
+            logger.warning("Failed to stat file %s: %s", relative_path, exc)
+            return FileParseResult(
+                relative_path=relative_path, programming_language=spec.language, error=str(exc)
+            )
+        if file_size > self._max_file_bytes:
+            logger.info(
+                "Skipping file %s (size=%d bytes, limit=%d bytes)",
+                relative_path, file_size, self._max_file_bytes
+            )
+            return FileParseResult(
+                relative_path=relative_path,
+                programming_language=spec.language,
+                error=f"File exceeds configured size limit ({self._max_file_bytes} bytes).",
             )
 
         try:

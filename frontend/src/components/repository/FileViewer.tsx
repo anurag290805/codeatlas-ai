@@ -68,28 +68,25 @@ function UnsupportedState({ name }: { name: string }) {
 export function FileViewer({ file, isLoading = false, error, className }: FileViewerProps) {
   return (
     <div
-      className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border/60 bg-card/40",
-        className,
-      )}
+      className={cn("flex h-full min-h-0 flex-col overflow-hidden", className)}
     >
       {file && !isLoading && (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-4 py-2">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-4 py-1.5">
           <div className="flex min-w-0 items-center gap-2">
-            <FileCode2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <FileCode2 className="h-4 w-4 shrink-0 text-muted-foreground/80" />
             <span className="truncate text-sm font-medium text-foreground">
               {file.name}
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {file.language && (
-              <Badge variant="outline" className="font-normal">
+              <Badge variant="secondary" className="h-5 gap-1 px-1.5 text-[10px] font-normal uppercase tracking-wide">
                 {file.language}
               </Badge>
             )}
-            <Badge variant="outline" className="font-normal">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {formatBytes(file.sizeBytes)}
-            </Badge>
+            </span>
           </div>
         </div>
       )}

@@ -46,7 +46,7 @@ class FakeLLM:
 
 def test_single_skill_orchestration() -> None:
     llm = FakeLLM()
-    result = asyncio.run(AgentOrchestrator(FakeRetriever(), llm).run(1, "Review the UI", 3))
+    result = asyncio.run(AgentOrchestrator(FakeRetriever(), llm).run(1, "Review the UI", 3, workspace_id="test-workspace"))
     assert result.status.value == "completed"
     assert result.selected_skills == [SkillName.TASTE]
     assert result.skill_results[0].output["skill"] == "taste"
@@ -56,11 +56,11 @@ def test_single_skill_orchestration() -> None:
 def test_sequential_orchestration_and_normal_fallback() -> None:
     llm = FakeLLM()
     orchestrator = AgentOrchestrator(FakeRetriever(), llm)
-    result = asyncio.run(orchestrator.run(1, "Redesign the dashboard and verify the page", 3))
+    result = asyncio.run(orchestrator.run(1, "Redesign the dashboard and verify the page", 3, workspace_id="test-workspace"))
     assert result.selected_skills == [SkillName.TASTE, SkillName.WEB_DESIGN_GUIDELINES, SkillName.AWESOME_DESIGN, SkillName.PLAYWRIGHT_CLI]
     assert len(result.skill_results) == 4
     assert "analysis for" in llm.requests[1].query
-    fallback = asyncio.run(orchestrator.run(1, "Where is authentication handled?", 3))
+    fallback = asyncio.run(orchestrator.run(1, "Where is authentication handled?", 3, workspace_id="test-workspace"))
     assert fallback.selected_skills == []
     assert fallback.final_result == "normal repository answer"
 

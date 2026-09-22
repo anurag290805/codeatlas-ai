@@ -48,42 +48,42 @@ interface StatusConfig {
 
 const STATUS_CONFIG: Record<RepositoryProcessingStatus, StatusConfig> = {
   pending: {
-    label: "Queued",
+    label: "Importing",
     icon: Clock,
     badgeClassName: "bg-muted text-muted-foreground border-transparent",
   },
   cloning: {
-    label: "Cloning",
+    label: "Indexing",
     icon: Loader2,
     badgeClassName: "bg-info/10 text-info border-transparent",
     spin: true,
   },
   parsing: {
-    label: "Parsing",
+    label: "Indexing",
     icon: Loader2,
     badgeClassName: "bg-info/10 text-info border-transparent",
     spin: true,
   },
   discovering_files: {
-    label: "Discovering files",
+    label: "Indexing",
     icon: Loader2,
     badgeClassName: "bg-info/10 text-info border-transparent",
     spin: true,
   },
   chunking: {
-    label: "Chunking",
+    label: "Indexing",
     icon: Loader2,
     badgeClassName: "bg-info/10 text-info border-transparent",
     spin: true,
   },
   storing: {
-    label: "Storing vectors",
+    label: "Indexing",
     icon: Loader2,
     badgeClassName: "bg-info/10 text-info border-transparent",
     spin: true,
   },
   embedding: {
-    label: "Embedding",
+    label: "Indexing",
     icon: Loader2,
     badgeClassName: "bg-info/10 text-info border-transparent",
     spin: true,
@@ -171,7 +171,7 @@ export function RepositoryHeader({
       transition={{ duration: 0.25, ease: "easeOut" }}
       className={className}
     >
-      <Card className="border-border/60 bg-card/60 backdrop-blur-sm">
+      <Card className="border-border/60 bg-card/70 backdrop-blur-sm">
         <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 space-y-2.5">
             <div className="flex flex-wrap items-center gap-2">
@@ -230,8 +230,11 @@ export function RepositoryHeader({
                   <span className="font-medium text-foreground">{progressLabel(repository)}</span>
                   <span className="tabular-nums text-muted-foreground">{Math.round(Math.min(100, Math.max(0, repository.progress_percent ?? 0)))}%</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={repository.progress_percent ?? 0}>
-                  <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${Math.min(100, Math.max(0, repository.progress_percent ?? 0))}%` }} />
+                <div className="h-2 overflow-hidden rounded-full bg-muted ring-1 ring-border/50" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={repository.progress_percent ?? 0}>
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-primary to-primary/80 transition-[width] duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, repository.progress_percent ?? 0))}%` }}
+                  />
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {repository.processed_files != null && <span>{repository.processed_files}/{repository.statistics?.fileCount ?? 0} files</span>}

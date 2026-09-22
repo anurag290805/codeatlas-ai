@@ -109,8 +109,10 @@ export function RepositoryStatus({ status, className }: RepositoryStatusProps) {
     };
 
   const { label, icon: Icon, className: statusClassName } = config;
+  const isActive = ["importing", "cloning", "indexing", "embedding", "deleting"].includes(status);
+
   return (
-    <Badge className={cn("gap-1.5 font-medium", statusClassName, className)}>
+    <Badge className={cn("gap-1.5 font-medium", statusClassName, isActive && "status-pulse", className)}>
       <Icon className="h-3 w-3" aria-hidden="true" />
       {label}
     </Badge>

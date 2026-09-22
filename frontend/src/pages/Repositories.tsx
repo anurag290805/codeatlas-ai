@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ErrorState } from "@/components/common/ErrorState";
@@ -118,19 +120,16 @@ export function Repositories() {
           </div>
 
           {isLoading ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/70 bg-card">
               {SKELETON_KEYS.map((key) => (
-                <RepositoryCard
-                  key={key}
-                  name=""
-                  owner=""
-                  visibility="public"
-                  defaultBranch="main"
-                  size=""
-                  lastUpdated=""
-                  status="idle"
-                  isLoading
-                />
+                <div key={key} className="flex items-center gap-3 px-3 py-3">
+                  <Skeleton className="h-7 w-7 shrink-0 rounded-md" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="hidden h-6 w-20 rounded-full md:block" />
+                </div>
               ))}
             </div>
           ) : noMatches ? (
@@ -140,28 +139,30 @@ export function Repositories() {
               description={`No imported repositories match “${filter.trim()}”.`}
             />
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((repository) => (
-                <RepositoryCard
-                  key={repository.id}
-                  name={nameOf(repository)}
-                  owner={nameOf(repository).split("/")[0] ?? "GitHub"}
-                  visibility="public"
-                  defaultBranch={repository.default_branch}
-                  size={`${repository.files_indexed.toLocaleString()} files`}
-                  lastUpdated={repository.last_indexed_at ? new Date(repository.last_indexed_at).toLocaleDateString() : "Not indexed"}
-                  status={statusOf(repository)}
-                  progressPercent={repository.progress_percent}
-                  stage={repository.stage}
-                  processedFiles={repository.processed_files}
-                  totalFiles={repository.files_indexed}
-                  processedChunks={repository.processed_chunks}
-                  totalChunks={repository.chunks_generated}
-                  processedEmbeddings={repository.processed_embeddings}
-                  totalEmbeddings={repository.embeddings_generated}
-                  onOpen={() => navigate(`/repositories/${repository.id}`)}
-                  onRefresh={() => void repositoriesQuery.refetch()}
-                />
+            <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+              {filtered.map((repository, index) => (
+                <div key={repository.id} className={cn(index > 0 && "border-t border-border/60")}>
+                  <RepositoryCard
+                    variant="row"
+                    name={nameOf(repository)}
+                    owner={nameOf(repository).split("/")[0] ?? "GitHub"}
+                    visibility="public"
+                    defaultBranch={repository.default_branch}
+                    size={`${repository.files_indexed.toLocaleString()} files`}
+                    lastUpdated={repository.last_indexed_at ? new Date(repository.last_indexed_at).toLocaleDateString() : "Not indexed"}
+                    status={statusOf(repository)}
+                    progressPercent={repository.progress_percent}
+                    stage={repository.stage}
+                    processedFiles={repository.processed_files}
+                    totalFiles={repository.files_indexed}
+                    processedChunks={repository.processed_chunks}
+                    totalChunks={repository.chunks_generated}
+                    processedEmbeddings={repository.processed_embeddings}
+                    totalEmbeddings={repository.embeddings_generated}
+                    onOpen={() => navigate(`/repositories/${repository.id}`)}
+                    onRefresh={() => void repositoriesQuery.refetch()}
+                  />
+                </div>
               ))}
             </div>
           )}

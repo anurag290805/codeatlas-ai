@@ -82,17 +82,18 @@ export function Settings() {
   const themeLabel = theme ? theme.charAt(0).toUpperCase() + theme.slice(1) : "System";
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6">
+    <div className="mx-auto w-full max-w-5xl space-y-8">
       <PageHeader
+        eyebrow="Workspace controls"
         title="Settings"
         description="Manage workspace preferences and runtime diagnostics."
         icon={<Settings2 className="h-5 w-5" />}
       />
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <Card className="h-full border-border/70">
+          <CardHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-border/60 pb-4">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/12">
               <Palette className="h-4 w-4" />
             </span>
             <div>
@@ -100,7 +101,7 @@ export function Settings() {
               <CardDescription>Control theme and information density.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="divide-y divide-border/60">
+          <CardContent className="divide-y divide-border/60 p-4 pt-1">
             <div className="flex items-center justify-between py-3 first:pt-0">
               <div>
                 <p className="text-sm font-medium">Theme</p>
@@ -117,9 +118,9 @@ export function Settings() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
+        <Card className="h-full border-border/70">
+          <CardHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-border/60 pb-4">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/12">
               <Brain className="h-4 w-4" />
             </span>
             <div>
@@ -127,7 +128,7 @@ export function Settings() {
               <CardDescription>How grounded answers are presented.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="divide-y divide-border/60">
+          <CardContent className="divide-y divide-border/60 p-4 pt-1">
             <SettingToggle
               label="Streaming responses"
               description="Persist the preference for progressive responses when supported."
@@ -155,9 +156,9 @@ export function Settings() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
+        <Card className="h-full border-border/70">
+          <CardHeader className="flex flex-row items-center gap-3 space-y-0 border-b border-border/60 pb-4">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/12">
               <Activity className="h-4 w-4" />
             </span>
             <div>
@@ -165,7 +166,7 @@ export function Settings() {
               <CardDescription>Connection, AI readiness, and environment.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-border/70 p-3">
                 <p className="text-xs text-muted-foreground">Backend status</p>
@@ -181,7 +182,7 @@ export function Settings() {
             <Button
               variant="outline"
               size="sm"
-              className="mt-4"
+              className="mt-3"
               onClick={() => { void health.refetch(); void queryHealth.refetch(); void version.refetch(); }}
               disabled={health.isFetching || queryHealth.isFetching || version.isFetching}
             >
@@ -190,9 +191,9 @@ export function Settings() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="h-full">
           <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/12">
               <Code2 className="h-4 w-4" />
             </span>
             <div>
@@ -200,7 +201,7 @@ export function Settings() {
               <CardDescription>Build and environment information.</CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="divide-y divide-border/60">
+          <CardContent className="divide-y divide-border/60 p-4 pt-1">
             <KeyValueRow label="Application" value="CodeAtlas AI" />
             <KeyValueRow label="Frontend environment" value={import.meta.env.MODE} />
             <KeyValueRow label="Backend version" value={version.data?.version ?? "Unavailable"} />

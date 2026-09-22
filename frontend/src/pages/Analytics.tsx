@@ -18,9 +18,7 @@ export function Analytics() {
   const { repositoryId: routeRepositoryId } = useParams<{ repositoryId: string }>();
   const [selectedRepositoryId, setSelectedRepositoryId] = useState(routeRepositoryId ?? "");
   const analytics = useAnalytics(selectedRepositoryId || undefined);
-  const errorMessage = analytics.error instanceof Error
-    ? analytics.error.message
-    : "Analytics data could not be loaded.";
+  const errorMessage = "CodeAtlas couldn't load analytics for this repository. Try again.";
 
   const handleRepositoryChange = (value: string) => {
     setSelectedRepositoryId(value);
@@ -30,6 +28,7 @@ export function Analytics() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <PageHeader
+        eyebrow="Workspace telemetry"
         title="Analytics"
         description="Understand repository scale, indexing progress, and code structure."
         icon={<BarChart3 className="h-5 w-5" />}
@@ -81,7 +80,7 @@ export function Analytics() {
         <RepositoryMetrics data={analytics.data.metrics} isLoading={analytics.isLoading} />
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <LanguageChart
           data={[...analytics.data.languageDistribution]}
           isLoading={analytics.isLoading}

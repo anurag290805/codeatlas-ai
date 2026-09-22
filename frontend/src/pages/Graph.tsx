@@ -39,6 +39,7 @@ export function Graph() {
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-5">
       <PageHeader
+        eyebrow="System map"
         title="Dependency Graph"
         description="Explore relationships across files, symbols, and modules — click a node to inspect it, drag to pan, and scroll to zoom."
         icon={<Network className="h-5 w-5" />}
@@ -77,9 +78,9 @@ export function Graph() {
 
       {selectedRepository && (
         <section className="min-h-0 flex-1 space-y-3">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex items-baseline justify-between gap-3 border-b border-border/60 pb-3">
             <div className="flex items-baseline gap-3">
-              <h2 className="text-base font-semibold tracking-tight">
+              <h2 className="font-mono text-sm font-semibold tracking-tight">
                 {repositoryLabel(selectedRepository)}
               </h2>
               {graphQuery.data && (
@@ -89,14 +90,16 @@ export function Graph() {
               )}
             </div>
           </div>
-          <DependencyGraph
+          <div className="overflow-hidden rounded-lg border border-border/70 bg-muted/10 shadow-sm">
+            <DependencyGraph
             repositoryId={selectedRepositoryId}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             onRefresh={() => void graphQuery.refetch()}
             isRefreshing={graphQuery.isFetching}
-            className="h-[calc(100vh-16rem)] min-h-[34rem]"
-          />
+              className="h-[calc(100vh-16rem)] min-h-[34rem]"
+            />
+          </div>
         </section>
       )}
     </div>

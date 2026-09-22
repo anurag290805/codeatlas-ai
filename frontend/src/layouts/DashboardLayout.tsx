@@ -24,11 +24,21 @@ export function DashboardLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { pathname } = useLocation();
 
-  const title = PAGE_TITLES[pathname] ??
-    (pathname.startsWith("/repositories/") ? "Repository" :
-      pathname.startsWith("/chat") ? "AI Chat" :
-        pathname.startsWith("/graph") ? "Dependency Graph" :
-          pathname.startsWith("/analytics") ? "Analytics" : "CodeAtlas AI");
+  const title =
+    PAGE_TITLES[pathname] ??
+    (pathname.includes("/dependencies")
+      ? "Dependencies"
+      : pathname.includes("/security")
+        ? "Security Audit"
+        : pathname.startsWith("/repositories/")
+          ? "Repository Explorer"
+          : pathname.startsWith("/chat")
+            ? "AI Chat"
+            : pathname.startsWith("/graph")
+              ? "Dependency Graph"
+              : pathname.startsWith("/analytics")
+                ? "Analytics"
+                : "CodeAtlas AI");
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -41,10 +51,10 @@ export function DashboardLayout() {
 
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
-      <div className="flex min-h-screen flex-1 flex-col">
+      <div className="flex h-screen min-h-0 flex-1 flex-col">
         <Navbar title={title} onMenuClick={() => setIsSidebarOpen(true)} />
 
-        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto outline-none">
+        <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
           <PageContainer fullHeight>
             <Outlet />
           </PageContainer>

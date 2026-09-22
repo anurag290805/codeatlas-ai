@@ -63,10 +63,10 @@ const FileNode: FC<NodeProps<GraphNode>> = ({ data, selected }) => {
   return (
     <div
       className={cn(
-        "min-w-[160px] rounded-lg border bg-card px-3 py-2 shadow-sm transition-colors",
+        "min-w-[160px] rounded-lg border bg-card px-3 py-2 shadow-sm transition-all",
         selected
-          ? "border-primary ring-1 ring-primary"
-          : "border-border/60 hover:border-border",
+          ? "border-primary/60 shadow-md ring-1 ring-primary/30"
+          : "border-border/60 hover:border-border hover:shadow-md",
       )}
     >
       <Handle type="target" position={Position.Top} className="!bg-muted-foreground/50" />

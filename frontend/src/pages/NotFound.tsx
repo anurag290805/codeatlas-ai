@@ -28,11 +28,11 @@ export function NotFound() {
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button render={<Link to="/" />} className="gap-1.5">
+        <Button nativeButton={false} render={<Link to="/" />} className="gap-1.5">
           <Compass className="h-4 w-4" aria-hidden="true" />
           Return to Dashboard
         </Button>
-        <Button variant="outline" render={<Link to="/repositories" />} className="gap-1.5">
+        <Button nativeButton={false} variant="outline" render={<Link to="/repositories" />} className="gap-1.5">
           <FileQuestion className="h-4 w-4" aria-hidden="true" />
           Browse Repositories
         </Button>

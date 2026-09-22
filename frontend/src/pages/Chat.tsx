@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AlertCircle, Bot, Loader2, MessageSquare, Server, Sparkles } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRepositories } from "@/hooks/useRepositories";
 import { useAgentTask, useRepositoryQuery } from "@/hooks/useQuery";
 import { Button } from "@/components/ui/button";
+import { ApiRequestError } from "@/utils/errors";
 import type { ChatMessage, Citation, QueryResponse } from "@/types";
 import type { RepositoryListItem } from "@/types/repository";
 
@@ -16,8 +17,16 @@ function messageId(prefix: string): string {
 }
 
 function formatError(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return "The repository query could not be completed. Please try again.";
+  if (error instanceof ApiRequestError) {
+    if (error.status === 502 || /gemini|provider/i.test(error.message)) {
+      return "The AI provider could not complete this request. Check provider availability and try again.";
+    }
+    return error.message;
+  }
+  if (error instanceof Error && /indexed repository|select an indexed/i.test(error.message)) {
+    return error.message;
+  }
+  return "CodeAtlas could not complete this repository request. Try again.";
 }
 
 function repositoryLabel(repository: RepositoryListItem): string {
@@ -66,6 +75,16 @@ export function Chat() {
     () => repositories.find((repository) => String(repository.id) === selectedRepositoryId),
     [repositories, selectedRepositoryId],
   );
+
+  useEffect(() => {
+    if (selectedRepositoryId || repositories.length === 0) return;
+    const readyRepository = repositories.find(
+      (repository) => repository.status === "ready" || repository.status === "indexed",
+    );
+    const nextRepository = readyRepository ?? repositories[0];
+    setSelectedRepositoryId(String(nextRepository.id));
+    navigate(`/chat/${nextRepository.id}`, { replace: true });
+  }, [navigate, repositories, selectedRepositoryId]);
 
   const handleRepositoryChange = (repositoryId: string) => {
     setSelectedRepositoryId(repositoryId);
@@ -143,9 +162,10 @@ export function Chat() {
   return (
     <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-6xl flex-col gap-5">
       <PageHeader
+        eyebrow="Repository intelligence"
         title="AI Chat"
         description="Ask grounded questions about an indexed repository, route analysis to specialists, or request a validated code change."
-        icon={<Bot className="h-5 w-5" />}
+        icon={<Bot className="h-4 w-4" />}
         actions={
           <>
             <div
@@ -206,8 +226,8 @@ export function Chat() {
       )}
 
       {selectedRepository && (
-        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/70">
-          <CardHeader className="border-b py-4">
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/70 shadow-sm">
+          <CardHeader className="border-b bg-muted/15 py-3.5">
               <CardTitle className="flex items-center gap-2 text-base">
                 <MessageSquare className="h-4 w-4 text-primary" />
                 {repositoryLabel(selectedRepository)}

@@ -28,8 +28,13 @@ from app.api.routes_analytics import router as analytics_router
 from app.api.routes_query import router as query_router
 from app.api.routes_agent import router as agent_router
 from app.api.routes_repo import router as repo_router
+from app.api.routes_intelligence import router as intelligence_router
 from app.config import get_settings
-from app.core.auth import WORKSPACE_COOKIE, ensure_workspace_cookie, workspace_cookie_value
+from app.core.workspace import (
+    WORKSPACE_COOKIE,
+    initialize_request_workspace,
+    set_workspace_cookie,
+)
 from app.core.indexing_queue import recover_indexing_jobs
 from app.db.database import close_db, init_db
 from app.utils.logger import get_logger
@@ -126,28 +131,13 @@ async def _request_context_middleware(request: Request, call_next):
     """
     correlation_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
     request.state.correlation_id = correlation_id
+    workspace_id, workspace_created = initialize_request_workspace(request)
     start_time = time.monotonic()
 
     response = await call_next(request)
 
-    # Only set a workspace cookie if no router established a workspace.
-    # Every router depends on `ensure_workspace` which creates the Workspace
-    # row and sets a 3-part cookie (workspace.timestamp.signature). If a
-    # router ran, `request.state.workspace_id` is set. If the router also
-    # wrote a cookie, we should not overwrite it with a potentially
-    # different format or value.
-    router_established_workspace = getattr(request.state, "workspace_id", None)
-    if not router_established_workspace and not request.cookies.get(WORKSPACE_COOKIE):
-        workspace_id = ensure_workspace_cookie(request)
-        response.set_cookie(
-            WORKSPACE_COOKIE,
-            workspace_cookie_value(workspace_id),
-            httponly=True,
-                secure=getattr(get_settings(), "environment", "development") in {"production", "staging"},
-            samesite="lax",
-            max_age=60 * 60 * 24 * 365,
-            path="/",
-        )
+    if workspace_created:
+        set_workspace_cookie(response, workspace_id, request)
 
     duration_ms = (time.monotonic() - start_time) * 1000
     response.headers["X-Request-ID"] = correlation_id
@@ -251,6 +241,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(agent_router, prefix=api_prefix)
     app.include_router(graph_router, prefix=api_prefix)
     app.include_router(analytics_router, prefix=api_prefix)
+    app.include_router(intelligence_router, prefix=api_prefix)
 
     logger.info("Routers registered prefix=%s", api_prefix)
 

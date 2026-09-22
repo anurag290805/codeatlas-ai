@@ -16,8 +16,10 @@ contract exposed to clients.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+import threading
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -28,12 +30,12 @@ from app.core.embeddings import EmbeddingGenerationError, EmbeddingService
 from app.core.auth import get_workspace_id
 from app.core.git_handler import GitRepositoryManager, RepositoryOperationError
 from app.core.graph_builder import get_graph_service
-from app.core.indexing_queue import enqueue_indexing_job
+from app.core.indexing_queue import enqueue_indexing_job, release_indexing_job
 from app.core.parser import RepositoryParseError, RepositoryParser
 from app.core.vector_store import VectorStoreError, VectorStoreService
 from app.core.workspace import ensure_workspace
 from app.db import crud
-from app.db.database import get_db
+from app.db.database import db_session, get_db
 from app.models.db_models import Repository
 from app.models import schemas
 from app.utils.logger import get_logger
@@ -87,6 +89,127 @@ def get_vector_store_service() -> VectorStoreService:
 
 
 # =========================================================================
+# Run ownership & liveness
+#
+# Indexing is concurrent: a retry, a reaper recovery, or a manual reindex can
+# start a newer run for the same repository while an older run is still
+# winding down (e.g. unblocking from a long git call). To keep these from
+# corrupting each other, every run owns a repository row through a *run epoch*
+# (``indexing_started_at``) and re-checks that ownership at every authoritative
+# terminal write (failure and commit). A run that lost ownership backs off and
+# leaves the newer run to drive the row. A per-run heartbeat thread keeps the
+# row alive so the reaper can tell a live-but-slow run from a wedged/dead one.
+# =========================================================================
+
+HEARTBEAT_INTERVAL_SECONDS = 20
+
+
+class _Heartbeat:
+    """Bump ``indexing_heartbeat_at`` on a daemon thread while a run lives."""
+
+    def __init__(
+        self,
+        repository_id: str,
+        workspace_id: str | None,
+        this_run_started_at: object | None,
+    ) -> None:
+        self._repository_id = repository_id
+        self._workspace_id = workspace_id
+        self._this_run_started_at = this_run_started_at
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, name="indexing-heartbeat", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=HEARTBEAT_INTERVAL_SECONDS + 5)
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            self._stop.wait(HEARTBEAT_INTERVAL_SECONDS)
+            if self._stop.is_set():
+                break
+            try:
+                if not _bump_heartbeat(self._repository_id, self._workspace_id, self._this_run_started_at):
+                    # Run no longer owns the row (reaper/retry took over). Stop
+                    # heartbeating so we never mask the replacement run's staleness.
+                    logger.info("Heartbeat lost ownership repository_id=%s", self._repository_id)
+                    break
+            except Exception:  # noqa: BLE001 - liveness is best-effort
+                logger.exception("Heartbeat update failed repository_id=%s", self._repository_id)
+
+
+def _run_owns_row(
+    db: Session,
+    repository_id: str,
+    workspace_id: str | None,
+    this_run_started_at: object | None,
+) -> bool:
+    """True if the run identified by ``this_run_started_at`` still owns the row.
+
+    Ownership means the row is still ``indexing`` and its ``indexing_started_at``
+    epoch is unchanged. This is the single guard used by both the failure path
+    and the commit path so a stale worker -- one recovered by the reaper, or a
+    newer retry already running -- can never publish stale data, mark READY,
+    mark a newer run FAILED, or overwrite a newer run's metadata.
+
+    If the row does not exist (e.g. deleted), we return True so the failure path
+    proceeds to attempt the terminal write (which will be a no-op or will create
+    a new row, but won't overwrite a newer run because no row exists).
+    """
+    current = crud.get_repository(db, repository_id, workspace_id=workspace_id) if workspace_id else crud.get_repository(db, repository_id)
+    if current is None:
+        return True
+    still_indexing = str(getattr(current, "indexing_status", "")) == schemas.RepositoryStatus.INDEXING.value
+    same_run = this_run_started_at is None or getattr(current, "indexing_started_at", None) == this_run_started_at
+    return still_indexing and same_run
+
+
+def _bump_heartbeat(
+    repository_id: str,
+    workspace_id: str | None,
+    this_run_started_at: object | None,
+) -> bool:
+    """Refresh ``indexing_heartbeat_at`` iff this run still owns the row.
+
+    Opens its own session (the heartbeat runs on a separate thread), performs a
+    guarded write, and returns whether the heartbeat should continue.
+    """
+    with db_session() as db:
+        if not _run_owns_row(db, repository_id, workspace_id, this_run_started_at):
+            return False
+        repo = crud.get_repository(db, repository_id, workspace_id=workspace_id) if workspace_id else crud.get_repository(db, repository_id)
+        if repo is None:
+            return False
+        repo.indexing_heartbeat_at = datetime.now(timezone.utc)
+        db.commit()
+        return True
+
+
+def _discard_staged_indexing(
+    vector_store_service: VectorStoreService | None,
+    staged_collection: str | None,
+    staged_clone: Path | None,
+) -> None:
+    """Best-effort removal of artifacts staged by a run that is backing off."""
+    if vector_store_service is not None and staged_collection:
+        try:
+            vector_store_service.discard_staged_collection(staged_collection)
+        except Exception as cleanup_exc:  # noqa: BLE001
+            logger.exception("Indexing rollback failed stage=vector_store_cleanup error=%s", cleanup_exc)
+    if staged_clone is not None:
+        try:
+            import shutil
+            shutil.rmtree(staged_clone, ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            logger.exception("Indexing rollback failed stage=clone_cleanup")
+
+
+# =========================================================================
 # Indexing orchestration
 #
 # This function coordinates the full indexing pipeline. It is invoked
@@ -119,9 +242,19 @@ def _run_indexing_pipeline(
     """
     staged_collection: str | None = None
     staged_clone: Path | None = None
+    # Run epoch: the repository's ``indexing_started_at`` that THIS run set on
+    # its first INDEXING status write. It is compared against the row at both
+    # failure time and commit time so a stale run can never overwrite the status
+    # of a newer run (started_at is reset whenever a retry or the reaper flips
+    # the row back to ``pending``).
+    this_run_started_at: object | None = None
+    heartbeat: _Heartbeat | None = None
     try:
         repository_numeric_id = int(repository_id)
         crud.update_repository_status(db, repository_id=repository_id, status=schemas.RepositoryStatus.INDEXING, workspace_id=workspace_id, indexing_stage="cloning", indexing_progress=5)
+        this_run_started_at = _indexing_started_at(db, repository_id, workspace_id)
+        heartbeat = _Heartbeat(repository_id, workspace_id, this_run_started_at)
+        heartbeat.start()
         identity = git_manager.validate_repository_url(clone_url)
         if is_update:
             logger.info("Indexing stage started repository_id=%s stage=update", repository_id)
@@ -162,6 +295,21 @@ def _run_indexing_pipeline(
             repository_id, list(getattr(embeddings, "embeddings", embeddings) or []), workspace_id
         )
 
+        # Ownership gate at commit time. This is the point of no return: publish,
+        # graph publish, clone promotion, metadata write, and READY are all
+        # authoritative and would overwrite a newer run if this run had been
+        # superseded (reaper reset + a replacement run, or a retry with a fresh
+        # epoch). A stale worker that was recovered must NOT publish its stale
+        # data, mark READY, or overwrite the newer run's metadata. If ownership is
+        # lost, discard only this run's staged artifacts and step aside.
+        if not _run_owns_row(db, repository_id, workspace_id, this_run_started_at):
+            logger.info(
+                "Indexing run superseded; backing off repository_id=%s (commit skipped)",
+                repository_id,
+            )
+            _discard_staged_indexing(vector_store_service, staged_collection, staged_clone)
+            return
+
         logger.info("Indexing stage started repository_id=%s stage=commit", repository_id)
         vector_store_service.publish_staged_collection(repository_id, staged_collection, workspace_id)
         graph_service.publish_graph(graph)
@@ -190,15 +338,18 @@ def _run_indexing_pipeline(
         )
 
     except RepositoryOperationError as exc:
-        _mark_indexing_failed(db, repository_id, "git", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
+        _mark_indexing_failed(db, repository_id, "git", exc, vector_store_service, staged_collection, staged_clone, workspace_id, this_run_started_at=this_run_started_at)
     except RepositoryParseError as exc:
-        _mark_indexing_failed(db, repository_id, "parser", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
+        _mark_indexing_failed(db, repository_id, "parser", exc, vector_store_service, staged_collection, staged_clone, workspace_id, this_run_started_at=this_run_started_at)
     except EmbeddingGenerationError as exc:
-        _mark_indexing_failed(db, repository_id, "embedding", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
+        _mark_indexing_failed(db, repository_id, "embedding", exc, vector_store_service, staged_collection, staged_clone, workspace_id, this_run_started_at=this_run_started_at)
     except VectorStoreError as exc:
-        _mark_indexing_failed(db, repository_id, "vector_store", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
+        _mark_indexing_failed(db, repository_id, "vector_store", exc, vector_store_service, staged_collection, staged_clone, workspace_id, this_run_started_at=this_run_started_at)
     except Exception as exc:  # noqa: BLE001 - final safety net for a background task
-        _mark_indexing_failed(db, repository_id, "unknown", exc, vector_store_service, staged_collection, staged_clone, workspace_id)
+        _mark_indexing_failed(db, repository_id, "unknown", exc, vector_store_service, staged_collection, staged_clone, workspace_id, this_run_started_at=this_run_started_at)
+    finally:
+        if heartbeat is not None:
+            heartbeat.stop()
 
 
 def _mark_indexing_failed(
@@ -210,26 +361,37 @@ def _mark_indexing_failed(
     staged_collection: str | None = None,
     staged_clone: Path | None = None,
     workspace_id: str | None = None,
+    this_run_started_at: object | None = None,
 ) -> None:
-    """Record failure and remove only artifacts from this indexing attempt."""
+    """Record failure and remove only artifacts from this indexing attempt.
+
+    Two race guards keep a failed run from interrupting a retry:
+
+    * ``release_indexing_job`` frees the queue's ``_active_ids`` slot *before*
+      the terminal status is committed, so an immediate retry of the just-``FAILED``
+      repository is actually enqueued instead of being silently dropped by the
+      duplicate-job guard while the worker is still tearing down.
+    * The terminal status write is guarded by a run-epoch comparison: it only
+      applies when the row is still owned by *this* run (``indexing_status ==
+      "indexing"`` and ``indexing_started_at`` unchanged). If a retry has already
+      reset the row to ``pending`` or a newer run has started indexing it, the
+      failed run backs off so it can never overwrite the newer run's status.
+    """
     logger.exception("Indexing failed repository_id=%s stage=%s error=%s", repository_id, stage, exc)
-    if vector_store_service is not None and staged_collection:
-        try:
-            vector_store_service.discard_staged_collection(staged_collection)
-        except Exception as cleanup_exc:  # noqa: BLE001
-            logger.exception(
-                "Indexing rollback failed repository_id=%s stage=vector_store_cleanup error=%s",
-                repository_id,
-                cleanup_exc,
-            )
-    if staged_clone is not None:
-        try:
-            import shutil
-            shutil.rmtree(staged_clone, ignore_errors=True)
-        except Exception:
-            logger.exception("Indexing rollback failed repository_id=%s stage=clone_cleanup", repository_id)
-    previous = crud.get_repository(db, repository_id, workspace_id=workspace_id) if workspace_id else crud.get_repository(db, repository_id)
-    had_usable_index = bool(previous and (previous.total_embeddings or previous.total_chunks or previous.total_files))
+    release_indexing_job(repository_id)
+    _discard_staged_indexing(vector_store_service, staged_collection, staged_clone)
+    if not _run_owns_row(db, repository_id, workspace_id, this_run_started_at):
+        # A retry has already reset the row to ``pending``, or a newer run
+        # has started indexing it. The failed run must not clobber that
+        # newer state; the retry's own pipeline drives it onward.
+        logger.info(
+            "Skipping terminal failure status repository_id=%s stage=%s (newer run owns the row)",
+            repository_id,
+            stage,
+        )
+        return
+    current = crud.get_repository(db, repository_id, workspace_id=workspace_id) if workspace_id else crud.get_repository(db, repository_id)
+    had_usable_index = bool(current and (current.total_embeddings or current.total_chunks or current.total_files))
     failure_status = schemas.RepositoryStatus.INDEX_FAILED if had_usable_index else schemas.RepositoryStatus.FAILED_IMPORT
     crud.update_repository_status(
         db,
@@ -659,6 +821,12 @@ def get_repository_file_content(
 # =========================================================================
 # Helpers
 # =========================================================================
+
+
+def _indexing_started_at(db: Session, repository_id: str, workspace_id: str | None) -> object | None:
+    """Return the repository's current ``indexing_started_at`` value (run epoch)."""
+    repo = crud.get_repository(db, repository_id, workspace_id=workspace_id)
+    return getattr(repo, "indexing_started_at", None) if repo is not None else None
 
 
 def _language_value(language: object) -> str:

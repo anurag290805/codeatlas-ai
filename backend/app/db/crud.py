@@ -276,10 +276,14 @@ def update_repository_indexing_status(
     if normalized_status == "indexing":
         repository.indexing_heartbeat_at = _utcnow()
         repository.indexing_started_at = repository.indexing_started_at or _utcnow()
-    if normalized_status == "ready":
+    elif normalized_status == "ready":
         repository.indexing_stage = "complete"
         repository.indexing_progress = 100
         repository.indexing_heartbeat_at = _utcnow()
+    if normalized_status == "pending":
+        # A retry or requeue starts a fresh run epoch: clear the start timestamp
+        # so the next indexing run will establish a distinct ``indexing_started_at``.
+        repository.indexing_started_at = None
     if hasattr(repository, "last_indexing_error"):
         repository.last_indexing_error = None
     repository.updated_at = _utcnow()

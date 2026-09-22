@@ -382,6 +382,8 @@ class TestParserErrors:
 
     def test_file_read_error_is_returned(self, tmp_path: Path, mocker) -> None:
         path = tmp_path / "missing.py"
+        # Create the file so stat() succeeds, then mock read_bytes to fail.
+        path.write_text("x = 1", encoding="utf-8")
         mocker.patch.object(Path, "read_bytes", side_effect=PermissionError("denied"))
         result = parser_for(empty_tree("")).parse_file(1, path, tmp_path)
         assert result.programming_language is ProgrammingLanguage.PYTHON
@@ -440,3 +442,63 @@ class TestParserPerformance:
         discovered = list(CodeParser._iter_repository_files(tmp_path))
         assert len(discovered) == 200
         assert len({path.name for path in discovered}) == 200
+
+
+class TestParserFileSizeLimit:
+    """Regression tests for the configurable max-file-bytes limit."""
+
+    def test_file_below_limit_is_parsed_normally(self, tmp_path: Path) -> None:
+        """A file smaller than the limit is parsed and produces chunks."""
+        path = tmp_path / "small.py"
+        path.write_text("def hello():\n    return 42\n", encoding="utf-8")
+        # Use a limit well above the file size.
+        parser = CodeParser(max_file_bytes=10_000)
+        result = parser.parse_file(1, path, tmp_path)
+        assert result.error is None
+        assert len(result.chunks) == 1
+        assert result.chunks[0].symbol_name == "hello"
+
+    def test_file_above_limit_is_skipped_safely(self, tmp_path: Path) -> None:
+        """A file exceeding the limit returns an error without reading its content."""
+        path = tmp_path / "large.py"
+        # File size ~50 bytes, limit 10 bytes -> exceeds.
+        path.write_text("def hello():\n    return 42\n", encoding="utf-8")
+        parser = CodeParser(max_file_bytes=10)
+        result = parser.parse_file(1, path, tmp_path)
+        assert result.error is not None
+        assert "exceeds configured size limit" in result.error
+        assert result.chunks == []
+
+    def test_repository_with_oversized_file_does_not_fail_indexing(self, tmp_path: Path) -> None:
+        """An oversized file is counted as skipped; the rest of the repo parses normally."""
+        small = tmp_path / "small.py"
+        large = tmp_path / "large.py"
+        small.write_text("def small():\n    return 1\n", encoding="utf-8")
+        # 200+ bytes, limit 50 -> exceeds.
+        large.write_text("def large():\n    return 2\n" * 20, encoding="utf-8")
+        parser = CodeParser(max_file_bytes=50)
+        result = parser.parse_repository(1, tmp_path)
+        # 1 parsed, 1 skipped (oversized), 0 failed
+        assert result.files_parsed == 1
+        assert result.files_skipped == 1
+        assert result.files_failed == 0
+        assert len(result.chunks) == 1
+        assert result.chunks[0].symbol_name == "small"
+        # Error list should be empty (oversized is not an error)
+        assert result.errors == []
+
+    def test_configured_limit_is_respected(self, tmp_path: Path) -> None:
+        """The limit parameter is honoured; a file at exactly the boundary parses."""
+        path = tmp_path / "exact.py"
+        # Content is 25 bytes (without trailing newline)
+        path.write_text("def exact():\n    return 3", encoding="utf-8")
+        parser = CodeParser(max_file_bytes=25)
+        result = parser.parse_file(1, path, tmp_path)
+        assert result.error is None
+        assert len(result.chunks) == 1
+
+        # Same file, limit 24 -> should skip
+        parser2 = CodeParser(max_file_bytes=24)
+        result2 = parser2.parse_file(1, path, tmp_path)
+        assert result2.error is not None
+        assert "exceeds configured size limit" in result2.error

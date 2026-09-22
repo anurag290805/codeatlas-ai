@@ -4,11 +4,11 @@
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
-@custom-variant colourful (&:is(.colourful *));
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -48,11 +48,6 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
-    --color-surface-blue: var(--surface-blue);
-    --color-surface-lavender: var(--surface-lavender);
-    --color-surface-mint: var(--surface-mint);
-    --color-surface-peach: var(--surface-peach);
-    --color-surface-blush: var(--surface-blush);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -62,269 +57,207 @@
     --radius-4xl: calc(var(--radius) * 2.2);
 }
 
-/* ============================
-   LIGHT THEME - Clean & Premium
-   ============================ */
+/* =========================================================
+   LIGHT THEME — Neutral / Premium
+   Near-white surfaces, near-black primary, near-zero chroma.
+   Inspired by Linear, Vercel, GitHub.
+   ========================================================= */
 :root {
-    --background: oklch(0.968 0.008 250);
-    --foreground: oklch(0.195 0.02 265);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.195 0.02 265);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.195 0.02 265);
+    --background: oklch(0.985 0.004 85);
+    --foreground: oklch(0.18 0.012 80);
+    --card: oklch(0.998 0.002 85);
+    --card-foreground: oklch(0.18 0.012 80);
+    --popover: oklch(0.998 0.002 85);
+    --popover-foreground: oklch(0.18 0.012 80);
 
-    /* Primary - Vibrant Purple/Indigo */
-    --primary: oklch(0.54 0.21 282);
+    /* Primary — dark slate (Vercel/GitHub-style) */
+    --primary: oklch(0.42 0.15 292);
     --primary-foreground: oklch(0.985 0 0);
 
-    /* Secondary - Blue tint with polish */
-    --secondary: oklch(0.94 0.04 250);
-    --secondary-foreground: oklch(0.27 0.08 265);
+    /* Secondary — faint neutral gray */
+    --secondary: oklch(0.95 0.008 85);
+    --secondary-foreground: oklch(0.25 0.012 80);
 
-    /* Muted */
-    --muted: oklch(0.94 0.02 250);
-    --muted-foreground: oklch(0.52 0.02 265);
+    /* Muted — neutral gray */
+    --muted: oklch(0.95 0.006 85);
+    --muted-foreground: oklch(0.52 0.012 80);
 
-    /* Accent - Purple/lavender */
-    --accent: oklch(0.92 0.06 285);
-    --accent-foreground: oklch(0.32 0.09 285);
+    /* Accent — barely-there tint */
+    --accent: oklch(0.94 0.018 292);
+    --accent-foreground: oklch(0.28 0.06 292);
 
-    /* Destructive - Rich red/pink */
-    --destructive: oklch(0.58 0.22 25);
+    --destructive: oklch(0.57 0.21 25);
     --destructive-foreground: oklch(0.985 0 0);
 
     /* Semantic Status Colors */
-    --success: oklch(0.54 0.15 158);
+    --success: oklch(0.52 0.12 155);
     --success-foreground: oklch(0.985 0 0);
-    --warning: oklch(0.68 0.15 76);
+    --warning: oklch(0.65 0.14 80);
     --warning-foreground: oklch(0.985 0 0);
-    --info: oklch(0.54 0.14 236);
+    --info: oklch(0.48 0.1 240);
     --info-foreground: oklch(0.985 0 0);
-    --danger: oklch(0.58 0.22 25);
-    --destructive: oklch(0.58 0.22 25);
+    --danger: oklch(0.57 0.21 25);
 
-    /* Borders & Inputs */
-    --border: oklch(0.9 0.015 250);
-    --input: oklch(0.88 0.015 250);
-    --ring: oklch(0.54 0.21 282);
+    /* Borders — nearly invisible */
+    --border: oklch(0.88 0.008 80);
+    --input: oklch(0.86 0.01 80);
+    --ring: oklch(0.56 0.16 292);
 
-    /* Chart Palette - Vivid, Distinct Hues */
-    --chart-1: oklch(0.54 0.21 282); /* Purple/Indigo */
-    --chart-2: oklch(0.6 0.16 230);  /* Blue/Cyan */
-    --chart-3: oklch(0.58 0.15 158); /* Green */
-    --chart-4: oklch(0.68 0.15 76);  /* Amber/Orange */
-    --chart-5: oklch(0.62 0.18 350); /* Pink/Coral */
+    /* Charts */
+    --chart-1: oklch(0.52 0.12 292);
+    --chart-2: oklch(0.58 0.035 80);
+    --chart-3: oklch(0.52 0.12 155);
+    --chart-4: oklch(0.62 0.13 80);
+    --chart-5: oklch(0.62 0.025 80);
 
-    --radius: 0.625rem;
+    --radius: 0.5rem;
 
-    /* Sidebar - Soft tinted */
-    --sidebar: oklch(0.925 0.025 260);
-    --sidebar-foreground: oklch(0.195 0.02 265);
-    --sidebar-primary: oklch(0.54 0.21 282);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.89 0.04 255);
-    --sidebar-accent-foreground: oklch(0.27 0.08 265);
-    --sidebar-border: oklch(0.88 0.02 250);
-    --sidebar-ring: oklch(0.54 0.21 282);
+    /* Sidebar — white, no tint */
+    --sidebar: oklch(0.975 0.004 85);
+    --sidebar-foreground: oklch(0.18 0.012 80);
+    --sidebar-primary: oklch(0.42 0.15 292);
+    --sidebar-primary-foreground: oklch(0.99 0 0);
+    --sidebar-accent: oklch(0.94 0.018 292);
+    --sidebar-accent-foreground: oklch(0.28 0.06 292);
+    --sidebar-border: oklch(0.89 0.008 80);
+    --sidebar-ring: oklch(0.56 0.16 292);
 
-    /* Tinted Surfaces for colorful cards */
-    --surface-blue: oklch(0.94 0.04 225);
-    --surface-lavender: oklch(0.94 0.05 295);
-    --surface-mint: oklch(0.94 0.05 160);
-    --surface-peach: oklch(0.95 0.04 65);
-    --surface-blush: oklch(0.94 0.05 350);
 }
 
-/* ============================
-   DARK THEME - Premium Navy/Carbon
-   Inspired by OmniRoute: deep surfaces, vivid accents
-   ============================ */
+/* =========================================================
+   DARK THEME — Refined Charcoal
+   Deep neutral surfaces, minimal chroma.
+   ========================================================= */
 .dark {
-    /* Page background — Deep charcoal-navy with subtle purple undertone */
-    --background: oklch(0.15 0.018 272);
-    --foreground: oklch(0.96 0.01 250);
+    --background: oklch(0.15 0.006 80);
+    --foreground: oklch(0.93 0.008 80);
+    --card: oklch(0.20 0.007 80);
+    --card-foreground: oklch(0.93 0.008 80);
+    --popover: oklch(0.22 0.009 80);
+    --popover-foreground: oklch(0.93 0.008 80);
 
-    /* Surface level 1 — Cards, elevated */
-    --card: oklch(0.205 0.022 275);
-    --card-foreground: oklch(0.96 0.01 250);
+    --primary: oklch(0.72 0.14 292);
+    --primary-foreground: oklch(0.16 0.01 80);
 
-    /* Surface level 2 — Popovers, dialogs */
-    --popover: oklch(0.235 0.025 276);
-    --popover-foreground: oklch(0.96 0.01 250);
+    --secondary: oklch(0.23 0.008 80);
+    --secondary-foreground: oklch(0.88 0.008 80);
+    --muted: oklch(0.225 0.007 80);
+    --muted-foreground: oklch(0.62 0.01 80);
+    --accent: oklch(0.24 0.025 292);
+    --accent-foreground: oklch(0.9 0.04 292);
 
-    /* Primary — Vibrant Purple/Indigo (the brand signature) */
-    --primary: oklch(0.65 0.2 282);
-    --primary-foreground: oklch(0.985 0 0);
-
-    /* Secondary - Slightly lighter surface */
-    --secondary: oklch(0.25 0.02 275);
-    --secondary-foreground: oklch(0.96 0.01 250);
-
-    --muted: oklch(0.245 0.02 275);
-    --muted-foreground: oklch(0.69 0.02 255);
-
-    /* Accent - Purple glow */
-    --accent: oklch(0.28 0.03 282);
-    --accent-foreground: oklch(0.96 0.015 255);
-
-    /* Destructive — vivid red, always legible */
     --destructive: oklch(0.62 0.19 25);
     --destructive-foreground: oklch(0.985 0 0);
 
-    --border: oklch(0.96 0.01 250 / 12%);
-    --input: oklch(0.96 0.01 250 / 18%);
-    --ring: oklch(0.65 0.2 282);
+    --border: oklch(1 0 0 / 9%);
+    --input: oklch(1 0 0 / 14%);
+    --ring: oklch(0.72 0.14 292);
 
-    /* Semantic status accents - More vivid on dark */
-    --success: oklch(0.68 0.16 158);
+    --success: oklch(0.68 0.14 155);
     --success-foreground: oklch(0.145 0 0);
-    --warning: oklch(0.72 0.16 76);
+    --warning: oklch(0.72 0.14 80);
     --warning-foreground: oklch(0.145 0 0);
-    --info: oklch(0.65 0.16 230);
+    --info: oklch(0.65 0.14 235);
     --info-foreground: oklch(0.145 0 0);
     --danger: oklch(0.62 0.19 25);
 
-    /* Chart palette — Vivid, distinct hues */
-    --chart-1: oklch(0.65 0.2 282);   /* Purple */
-    --chart-2: oklch(0.65 0.16 230);  /* Blue/Cyan */
-    --chart-3: oklch(0.68 0.16 158);  /* Green */
-    --chart-4: oklch(0.72 0.16 76);   /* Amber */
-    --chart-5: oklch(0.64 0.19 350);  /* Pink/Coral */
+    --chart-1: oklch(0.72 0.14 292);
+    --chart-2: oklch(0.68 0.035 80);
+    --chart-3: oklch(0.68 0.14 155);
+    --chart-4: oklch(0.72 0.14 80);
+    --chart-5: oklch(0.72 0.025 80);
 
-    /* Sidebar — Slightly lighter navy */
-    --sidebar: oklch(0.18 0.018 272);
-    --sidebar-foreground: oklch(0.96 0.01 250);
-    --sidebar-primary: oklch(0.65 0.2 282);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.26 0.025 278);
-    --sidebar-accent-foreground: oklch(0.96 0.01 252);
-    --sidebar-border: oklch(0.96 0.01 250 / 10%);
-    --sidebar-ring: oklch(0.65 0.2 282);
+    --sidebar: oklch(0.17 0.006 80);
+    --sidebar-foreground: oklch(0.93 0.008 80);
+    --sidebar-primary: oklch(0.72 0.14 292);
+    --sidebar-primary-foreground: oklch(0.16 0.01 80);
+    --sidebar-accent: oklch(0.24 0.018 292);
+    --sidebar-accent-foreground: oklch(0.93 0.04 292);
+    --sidebar-border: oklch(1 0 0 / 8%);
+    --sidebar-ring: oklch(0.72 0.14 292);
 
-    /* Tinted surfaces for dark mode */
-    --surface-blue: oklch(0.24 0.05 230);
-    --surface-lavender: oklch(0.24 0.05 285);
-    --surface-mint: oklch(0.24 0.04 158);
-    --surface-peach: oklch(0.24 0.05 65);
-    --surface-blush: oklch(0.24 0.06 350);
-}
-
-/* ============================
-   COLOURFUL THEME - Rich & Vibrant
-   Deliberate rich accents, still professional
-   ============================ */
-.colourful {
-    --background: oklch(0.955 0.022 255);
-    --foreground: oklch(0.22 0.04 268);
-    --card: oklch(0.99 0.015 250);
-    --card-foreground: oklch(0.22 0.04 268);
-    --popover: oklch(0.99 0.015 250);
-    --popover-foreground: oklch(0.22 0.04 268);
-
-    /* Primary - Rich purple/indigo */
-    --primary: oklch(0.46 0.22 285);
-    --primary-foreground: oklch(0.99 0 0);
-
-    /* Secondary - Tinted with blue */
-    --secondary: oklch(0.88 0.065 245);
-    --secondary-foreground: oklch(0.24 0.06 265);
-
-    --muted: oklch(0.92 0.025 260);
-    --muted-foreground: oklch(0.45 0.04 265);
-
-    /* Accent - Rich lavender/pink */
-    --accent: oklch(0.88 0.075 335);
-    --accent-foreground: oklch(0.3 0.1 335);
-
-    /* Semantic colors - more saturated */
-    --destructive: oklch(0.55 0.21 25);
-    --destructive-foreground: oklch(0.99 0 0);
-    --success: oklch(0.56 0.16 158);
-    --success-foreground: oklch(0.99 0 0);
-    --warning: oklch(0.64 0.16 76);
-    --warning-foreground: oklch(0.15 0 0);
-    --info: oklch(0.52 0.16 236);
-    --info-foreground: oklch(0.99 0 0);
-    --danger: oklch(0.55 0.21 25);
-
-    --border: oklch(0.8 0.04 265 / 45%);
-    --input: oklch(0.8 0.04 265 / 55%);
-    --ring: oklch(0.52 0.18 250);
-
-    /* Charts - Rich, distinct hues */
-    --chart-1: oklch(0.54 0.22 285); /* Rich Purple */
-    --chart-2: oklch(0.58 0.16 220); /* Rich Blue */
-    --chart-3: oklch(0.6 0.16 150);  /* Rich Green */
-    --chart-4: oklch(0.66 0.16 76);  /* Rich Amber */
-    --chart-5: oklch(0.6 0.19 345);  /* Rich Pink */
-
-    /* Sidebar - Distinct tinted lavender */
-    --sidebar: oklch(0.915 0.04 265);
-    --sidebar-foreground: oklch(0.22 0.04 268);
-    --sidebar-primary: oklch(0.46 0.22 285);
-    --sidebar-primary-foreground: oklch(0.99 0 0);
-    --sidebar-accent: oklch(0.86 0.06 265);
-    --sidebar-accent-foreground: oklch(0.24 0.06 265);
-    --sidebar-border: oklch(0.8 0.05 265 / 45%);
-    --sidebar-ring: oklch(0.52 0.18 250);
-
-    /* More prominent surface tints */
-    --surface-blue: oklch(0.94 0.05 230);
-    --surface-lavender: oklch(0.94 0.055 290);
-    --surface-mint: oklch(0.93 0.055 158);
-    --surface-peach: oklch(0.94 0.05 60);
-    --surface-blush: oklch(0.94 0.055 350);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
   body {
     @apply bg-background text-foreground antialiased;
-    background-image: radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--primary) 6%, transparent), transparent 28rem);
-    background-attachment: fixed;
-    }
-  .dark body {
     background-image:
-      radial-gradient(110rem 55rem at 85% -10%, color-mix(in oklab, var(--primary) 14%, transparent), transparent 62%),
-      linear-gradient(to right, color-mix(in oklab, var(--foreground) 2.5%, transparent) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 2.5%, transparent) 1px, transparent 1px);
-    background-size: auto, 28px 28px, 28px 28px;
-    background-attachment: fixed;
-    }
-  .colourful body {
-    background-image:
-      radial-gradient(circle at 8% 0%, color-mix(in oklab, var(--chart-2) 12%, transparent), transparent 32rem),
-      radial-gradient(circle at 92% 8%, color-mix(in oklab, var(--chart-5) 10%, transparent), transparent 28rem),
-      radial-gradient(circle at 55% 100%, color-mix(in oklab, var(--chart-1) 8%, transparent), transparent 36rem);
-    }
+      linear-gradient(color-mix(in oklab, var(--foreground) 2%, transparent) 1px, transparent 1px);
+    background-size: 100% 32px;
+  }
   html {
     @apply font-sans;
-    }
+    /* Numerals, values, labels and tables align on a shared axis. */
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 @layer components {
-  .colourful [data-slot="card"] {
-    background-color: color-mix(in oklab, var(--surface-blue) 45%, var(--card));
-  }
-
-  /* Theme-aware elevation for all cards */
+  /* Card elevation — flat by default, subtle border-only lift on hover */
   [data-slot="card"] {
-    transition: all 160ms ease-out;
+    @apply border border-border/70 shadow-[0_1px_2px_color-mix(in_oklab,var(--foreground)_4%,transparent)];
+    transition: box-shadow 160ms ease-out, border-color 160ms ease-out, transform 160ms ease-out;
+  }
+  [data-slot="card"]:hover {
+    @apply border-border;
   }
 
-  .dark [data-slot="card"] {
-    box-shadow: 0 1px 3px color-mix(in oklab, black 20%, transparent), 0 0 0 1px color-mix(in oklab, var(--foreground) 4%, transparent);
+  /* ---------------------------------------------------------------
+     TYPOGRAPHY KIT — a deliberate, shared label/heading rhythm so the
+     whole app reads as one system rather than ad-hoc per-component sizes.
+     Only the foreground text carries weight; muted stays muted.
+     --------------------------------------------------------------- */
+  /* Tiny uppercase key / eyebrow label */
+  .t-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.045em] text-muted-foreground/80;
+  }
+  /* Section heading */
+  .t-heading {
+    @apply text-[15px] font-semibold tracking-[-0.01em] text-foreground;
+  }
+  /* Large metric value — tabular, tight, foreground-weighted */
+  .t-metric {
+    @apply text-2xl font-semibold tracking-[-0.02em] text-foreground tabular-nums;
+  }
+  /* Inline metric unit / suffix */
+  .t-metric-unit {
+    @apply text-[13px] font-medium text-muted-foreground tabular-nums;
+  }
+  /* Hairline divider used to separate list rows and stat columns */
+  .hairline-t {
+    @apply border-t border-border/70;
+  }
+  .hairline-r {
+    @apply border-r border-border/70;
+  }
+  .hairline-b {
+    @apply border-b border-border/70;
   }
 
-  :root [data-slot="card"] {
-    box-shadow: 0 1px 3px color-mix(in oklab, black 6%, transparent), 0 0 0 1px color-mix(in oklab, var(--foreground) 5%, transparent);
+  /* Focused list row — flat, hairline-separated, hover reveals a quiet
+     surface. This is the primary "no-box" container across the app. */
+  .list-row {
+    @apply -mx-3 flex items-center gap-3 rounded-md px-3 transition-colors hover:bg-muted/50;
   }
 
-  .colourful [data-slot="card"] {
-    box-shadow: 0 2px 8px color-mix(in oklab, var(--primary) 8%, transparent), 0 0 0 1px color-mix(in oklab, var(--primary) 6%, transparent);
+  .surface-grid {
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
+
+  .status-pulse {
+    animation: status-pulse 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--warning) 22%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--warning) 0%, transparent); }
 }
 
 @layer utilities {
@@ -337,5 +270,39 @@
     transition-property: color, background-color, border-color, box-shadow, opacity, transform;
     transition-duration: 160ms;
     transition-timing-function: ease-out;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--muted-foreground) 25%, transparent);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+  }
+
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+  }
+
+  .glass-surface {
+    background-color: color-mix(in oklab, var(--card) 85%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

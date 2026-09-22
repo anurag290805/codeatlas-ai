@@ -94,7 +94,10 @@ def _proposal_json(root: Path) -> str:
 
 
 class FakeRetriever:
+    queries = []
+
     def retrieve(self, query):
+        self.queries.append(query)
         return SimpleNamespace(assembled_context="File: main.py\nanswer = 1")
 
 
@@ -107,6 +110,9 @@ class FakeLLM:
 
     async def generate(self, request):
         return SimpleNamespace(answer=_proposal_json(self._root), provider=self.provider_name, model=self.model_name)
+
+    async def generate_answer(self, retrieval):
+        return SimpleNamespace(answer="scoped repository answer")
 
 
 def _build_client(db: FakeDB, workspace_holder: _Workspace, llm: FakeLLM) -> TestClient:
@@ -150,6 +156,26 @@ def test_agent_route_is_workspace_scoped_returns_404_for_foreign_repo(tmp_path, 
             json={"repository_id": SECOND_REPOSITORY_ID, "task": "review", "mode": "analyze"},
         )
     assert response.status_code == 404
+
+
+def test_agent_retrieval_preserves_repository_and_workspace_scope(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "repos" / "ws-a" / "repo"
+    monkeypatch.setattr("app.agents.patching.get_settings", lambda: _settings(root))
+    db = FakeDB(root)
+    holder = _Workspace()
+    FakeRetriever.queries.clear()
+
+    with _build_client(db, holder, FakeLLM(root)) as client:
+        response = client.post(
+            "/agent/tasks",
+            json={"repository_id": CURRENT_REPOSITORY_ID, "task": "review", "mode": "analyze"},
+        )
+
+    assert response.status_code == 200
+    assert FakeRetriever.queries
+    query = FakeRetriever.queries[-1]
+    assert query.repository_id == str(CURRENT_REPOSITORY_ID)
+    assert query.workspace_id == CURRENT_WORKSPACE
 
 
 def test_approve_requires_same_workspace_and_is_single_use(tmp_path, monkeypatch) -> None:

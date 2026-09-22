@@ -10,14 +10,14 @@ from app.models.db_models import Workspace
 
 WORKSPACE_COOKIE = "codeatlas_workspace"
 _workspace_context: ContextVar[str | None] = ContextVar("workspace_id", default=None)
-_EPHEMERAL_KEY = secrets.token_bytes(32)
+_DEVELOPMENT_KEY = b"codeatlas-development-workspace-key-v1"
 
 def current_workspace_id() -> str | None:
     return _workspace_context.get()
 
 def _key() -> bytes:
     configured = get_settings().workspace_session_secret
-    return configured.encode() if configured else _EPHEMERAL_KEY
+    return configured.encode() if configured else _DEVELOPMENT_KEY
 
 def _sign(workspace_id: str, issued_at: int) -> str:
     payload = f"{workspace_id}.{issued_at}".encode()
@@ -37,6 +37,11 @@ def _set_cookie(response: Response, workspace_id: str, request: Request | None =
     issued_at = int(time.time())
     cross_site = get_settings().environment == "production" or (request is not None and request.url.scheme == "https")
     response.set_cookie(WORKSPACE_COOKIE, f"{workspace_id}.{issued_at}.{_sign(workspace_id, issued_at)}", httponly=True, secure=cross_site, samesite="none" if cross_site else "lax", max_age=60 * 60 * 24 * 30, path="/")
+
+def workspace_cookie_value(workspace_id: str) -> str:
+    """Create the canonical signed cookie value for a workspace."""
+    issued_at = int(time.time())
+    return f"{workspace_id}.{issued_at}.{_sign(workspace_id, issued_at)}"
 
 async def ensure_workspace(request: Request, response: Response, db: Session = Depends(get_db)) -> str:
     if getattr(request.state, "workspace_id", None):

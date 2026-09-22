@@ -33,20 +33,20 @@ class AgentOrchestrator:
         self.retriever = retriever
         self.executor = SkillExecutor(llm)
 
-    async def run(self, repository_id: int, task: str, top_k: int, acceptance_criteria: list[str] | None = None, image_data_url: str | None = None, route: str | None = None, mode: str = "analyze", repository: object | None = None) -> AgentTaskResult:
+    async def run(self, repository_id: int, task: str, top_k: int, acceptance_criteria: list[str] | None = None, image_data_url: str | None = None, route: str | None = None, mode: str = "analyze", repository: object | None = None, *, workspace_id: str) -> AgentTaskResult:
         started = time.perf_counter()
         skills = route_task(task)
         if mode == "modify":
             if repository is None:
                 raise ValueError("Repository metadata is required for modify mode.")
-            retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=f"frontend implementation context for requested change: {task}", repository_id=str(repository_id), top_k=top_k))
+            retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=f"frontend implementation context for requested change: {task}", repository_id=str(repository_id), top_k=top_k, workspace_id=workspace_id))
             modification = await PatchWorkflow(self.executor.llm).run(repository, task, retrieval.assembled_context, route, acceptance_criteria or [])
             return AgentTaskResult(task, skills, TaskStatus.COMPLETED if modification.status == "completed" else TaskStatus.FAILED, modification.summary, [], time.perf_counter() - started, modification.errors, _modification_dict(modification), mode)
         if not skills:
-            retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=task, repository_id=str(repository_id), top_k=top_k))
+            retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=task, repository_id=str(repository_id), top_k=top_k, workspace_id=workspace_id))
             answer = await self.executor.llm.generate_answer(retrieval)
             return AgentTaskResult(task, [], TaskStatus.COMPLETED, answer.answer, [], time.perf_counter() - started)
-        retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=f"frontend UI conventions and implementation context: {task}", repository_id=str(repository_id), top_k=top_k))
+        retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=f"frontend UI conventions and implementation context: {task}", repository_id=str(repository_id), top_k=top_k, workspace_id=workspace_id))
         context = retrieval.assembled_context
         results: list[SkillResult] = []
         prior = ""
@@ -73,13 +73,13 @@ class AgentOrchestrator:
         status = TaskStatus.FAILED if failures and all(result.status is not TaskStatus.COMPLETED for result in results) else TaskStatus.COMPLETED
         return AgentTaskResult(task, skills, status, final, results, time.perf_counter() - started, failures, None, mode)
 
-    async def plan_modify(self, repository_id: int, task: str, top_k: int, route: str | None, acceptance_criteria: list[str] | None, repository: object) -> PlannedModification:
+    async def plan_modify(self, repository_id: int, task: str, top_k: int, route: str | None, acceptance_criteria: list[str] | None, repository: object, *, workspace_id: str) -> PlannedModification:
         """Plan a modify-mode change WITHOUT writing any file or executing code.
 
         Returns a validated proposal that must be explicitly approved (by a human
         via the approval endpoint) before ``apply_modify`` may run.
         """
-        retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=f"frontend implementation context for requested change: {task}", repository_id=str(repository_id), top_k=top_k))
+        retrieval = await asyncio.to_thread(self.retriever.retrieve, RetrievalQuery(text=f"frontend implementation context for requested change: {task}", repository_id=str(repository_id), top_k=top_k, workspace_id=workspace_id))
         context = retrieval.assembled_context
         proposal, changed_paths = await PatchWorkflow(self.executor.llm).plan(repository, task, context, route, acceptance_criteria or [])
         return PlannedModification(repository_id, task, context, route, acceptance_criteria or [], proposal, changed_paths)

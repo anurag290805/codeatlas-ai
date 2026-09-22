@@ -7,7 +7,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export type ActivityType =
@@ -38,46 +38,41 @@ const ACTIVITY_ICONS: Record<ActivityType, LucideIcon> = {
   index_updated: RefreshCw,
 };
 
-/** Accent tone per activity type so each event reads at a glance. */
-const ACTIVITY_TONES: Record<ActivityType, { icon: string; chip: string }> = {
-  repository_imported: { icon: "text-primary", chip: "bg-primary/16 dark:bg-primary/20 colourful:bg-primary/22" },
-  repository_deleted: { icon: "text-danger", chip: "bg-danger/16 dark:bg-danger/20 colourful:bg-danger/22" },
-  query_executed: { icon: "text-info", chip: "bg-info/16 dark:bg-info/20 colourful:bg-info/22" },
-  graph_generated: { icon: "text-info", chip: "bg-info/16 dark:bg-info/20 colourful:bg-info/22" },
-  index_updated: { icon: "text-success", chip: "bg-success/16 dark:bg-success/20 colourful:bg-success/22" },
-};
-
 /**
- * Displays a chronological feed of recent repository activity. Purely
- * presentational — the activity list is supplied via props.
- *
- * `ActivityItem` is defined here as the dashboard activity projection and
- * should move to `src/types` once shared domain types exist.
+ * Chronological feed of recent repository activity. Follows the dashboard's
+ * dense, left-pinned language: a flat panel with a hairline header and a
+ * hairline-separated list. Icons are monochrome — no colour chips — so the
+ * readout reads as quiet tooling rather than a decorated feed.
  */
 export function RecentActivity({ activities, className }: RecentActivityProps) {
   return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium">Recent Activity</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <Card className={cn("border-0 bg-muted/20 shadow-none", className)}>
+      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+        <h3 className="t-heading">Recent activity</h3>
+        {activities.length > 0 && (
+          <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+            {activities.length} events
+          </span>
+        )}
+      </div>
+
+      <CardContent className="p-4">
         {activities.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">No recent activity yet.</p>
+          <p className="py-4 text-center text-sm text-muted-foreground">No recent activity yet.</p>
         ) : (
-          <ul className="space-y-4">
+          <ul className="divide-y divide-border/60">
             {activities.map((activity) => {
               const Icon = ACTIVITY_ICONS[activity.type];
-              const tone = ACTIVITY_TONES[activity.type];
 
               return (
-                <li key={activity.id} className="flex items-start gap-3">
-                  <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full", tone.chip)}>
-                    <Icon className={cn("h-3.5 w-3.5", tone.icon)} aria-hidden="true" />
+                <li key={activity.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/40 text-muted-foreground">
+                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                   </span>
-                  <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-sm font-medium">{activity.title}</p>
-                      <span className="shrink-0 text-xs text-muted-foreground">
+                      <span className="shrink-0 text-[11px] text-muted-foreground">
                         {activity.timestamp}
                       </span>
                     </div>

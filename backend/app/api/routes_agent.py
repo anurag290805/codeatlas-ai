@@ -12,7 +12,7 @@ from app.agents.service import AgentOrchestrator, PlannedModification
 from app.api.routes_query import get_llm_service, get_retriever_service
 from app.core.auth import get_workspace_id
 from app.core.approvals import get_approval_store
-from app.core.llm import LLMService, LLMServiceError
+from app.core.llm import LLMRateLimitError, LLMService, LLMServiceError, LLMTimeoutError
 from app.core.retriever import RetrievalError, RepositoryNotIndexedError, RetrieverService
 from app.core.workspace import ensure_workspace
 from app.db import crud
@@ -41,7 +41,7 @@ async def run_agent_task(
     if payload.mode == "modify":
         # Two-phase flow: plan only (no writes), then require explicit human approval.
         planned = await AgentOrchestrator(retriever, llm_service).plan_modify(
-            payload.repository_id, payload.task, payload.top_k, payload.route, payload.acceptance_criteria, repository,
+            payload.repository_id, payload.task, payload.top_k, payload.route, payload.acceptance_criteria, repository, workspace_id=workspace_id,
         )
         return _pending_approval_response(payload, planned, workspace_id)
 
@@ -55,11 +55,16 @@ async def run_agent_task(
             payload.route,
             payload.mode,
             repository,
+            workspace_id=workspace_id,
         )
     except RepositoryNotIndexedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Repository is not yet indexed.") from exc
     except RetrievalError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to retrieve repository context.") from exc
+    except LLMRateLimitError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Gemini rate limit or quota was exceeded.") from exc
+    except LLMTimeoutError as exc:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Gemini generation timed out.") from exc
     except LLMServiceError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Agent generation failed. Please retry.") from exc
     except PatchConflictError as exc:

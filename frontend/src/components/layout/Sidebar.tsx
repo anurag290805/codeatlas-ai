@@ -21,8 +21,6 @@ interface NavItem {
   icon: typeof LayoutDashboard;
   /** When true, the item is active for any child route (e.g. chat/:id). */
   activeForPrefix?: string;
-  /** Optional semantic accent for active state */
-  accent?: "primary" | "info" | "success" | "warning";
 }
 
 interface NavGroup {
@@ -34,47 +32,32 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Workspace",
     items: [
-      { label: "Dashboard", to: "/", icon: LayoutDashboard, accent: "primary" },
-      { label: "Repositories", to: "/repositories", icon: FolderGit2, accent: "primary", activeForPrefix: "/repositories" },
-      { label: "Search", to: "/search", icon: Search, accent: "info" },
+      { label: "Dashboard", to: "/", icon: LayoutDashboard },
+      { label: "Repositories", to: "/repositories", icon: FolderGit2, activeForPrefix: "/repositories" },
+      { label: "Search", to: "/search", icon: Search },
     ],
   },
   {
     label: "Intelligence",
     items: [
-      { label: "AI Chat", to: "/chat", icon: MessageSquare, accent: "info", activeForPrefix: "/chat" },
-      { label: "Dependency Graph", to: "/graph", icon: Network, accent: "success", activeForPrefix: "/graph" },
-      { label: "Analytics", to: "/analytics", icon: BarChart3, accent: "warning", activeForPrefix: "/analytics" },
+      { label: "AI Chat", to: "/chat", icon: MessageSquare, activeForPrefix: "/chat" },
+      { label: "Dependency Graph", to: "/graph", icon: Network, activeForPrefix: "/graph" },
+      { label: "Analytics", to: "/analytics", icon: BarChart3, activeForPrefix: "/analytics" },
     ],
   },
   {
     label: "System",
-    items: [{ label: "Settings", to: "/settings", icon: Settings, accent: "primary" }],
+    items: [{ label: "Settings", to: "/settings", icon: Settings }],
   },
 ];
 
-const ACCENT_STYLES = {
-  primary: {
-    active: "bg-primary/18 text-primary border-primary/30 shadow-sm shadow-primary/10 dark:bg-primary/22 dark:border-primary/35 colourful:bg-primary/20",
-    icon: "text-primary",
-    indicator: "bg-primary",
-  },
-  info: {
-    active: "bg-info/18 text-info border-info/30 shadow-sm shadow-info/10 dark:bg-info/22 dark:border-info/35 colourful:bg-info/20",
-    icon: "text-info",
-    indicator: "bg-info",
-  },
-  success: {
-    active: "bg-success/18 text-success border-success/30 shadow-sm shadow-success/10 dark:bg-success/22 dark:border-success/35 colourful:bg-success/20",
-    icon: "text-success",
-    indicator: "bg-success",
-  },
-  warning: {
-    active: "bg-warning/18 text-warning border-warning/30 shadow-sm shadow-warning/10 dark:bg-warning/22 dark:border-warning/35 colourful:bg-warning/20",
-    icon: "text-warning",
-    indicator: "bg-warning",
-  },
-} as const;
+/**
+ * Monochrome active indicator — a quiet surface + a thin left accent
+ * rail, the way Linear and GitHub nav treat selection. No filled pill
+ * and no border: the rail and the stronger foreground carry the state.
+ */
+const ACTIVE_CLASS = "bg-sidebar-accent/65 text-sidebar-foreground";
+const INACTIVE_CLASS = "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground active:translate-y-px";
 
 interface SidebarProps {
   /** Whether the mobile drawer is open. Ignored on desktop, where the sidebar is always visible. */
@@ -112,25 +95,26 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-sidebar transition-transform duration-200 ease-in-out",
+          "fixed inset-y-0 left-0 z-50 flex w-[14.5rem] flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-200 ease-in-out",
           "md:sticky md:top-0 md:h-screen md:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full",
         )}
         aria-label="Primary navigation"
       >
-        <div className="flex h-14 items-center justify-between border-b border-sidebar-border bg-gradient-to-r from-primary/[0.04] to-transparent px-4">
-          <span className="flex items-center gap-2.5 text-sm font-semibold tracking-tight">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center">
+        {/* Logo header — minimal, clean */}
+        <div className="flex h-12 items-center justify-between border-b border-sidebar-border px-3.5">
+          <a href="/" className="flex items-center gap-2.5 outline-none focus-visible:rounded focus-visible:ring-2">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
               <img
                 src="/codeatlas-logo.png"
-                alt=""
+                alt="CodeAtlas"
                 className="h-8 w-8 object-contain"
               />
             </span>
-            <span className="text-sidebar-foreground">
+            <span className="text-[13px] font-semibold tracking-tight text-sidebar-foreground">
               CodeAtlas <span className="text-primary">AI</span>
             </span>
-          </span>
+          </a>
           <Button
             variant="ghost"
             size="icon"
@@ -142,79 +126,87 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           </Button>
         </div>
 
-        <div className="border-b border-sidebar-border p-3">
+        {/* Import action — prominent but restrained */}
+        <div className="border-b border-sidebar-border p-2.5">
           <Button
             onClick={() => {
               openImport();
               onClose?.();
             }}
-            className="w-full gap-1.5 shadow-md shadow-primary/15"
+            className="w-full gap-1.5 shadow-sm shadow-primary/15"
           >
             <Plus className="h-4 w-4" />
             Import repository
           </Button>
         </div>
 
-        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
+        {/* Navigation groups — tight, scannable */}
+        <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-5">
           {NAV_GROUPS.map((group) => (
-            <div key={group.label} className="space-y-1">
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/55">
+            <div key={group.label} className="space-y-1.5">
+              <p className="t-label px-2.5">
                 {group.label}
               </p>
-              {group.items.map(({ label, to, icon: Icon, activeForPrefix, accent = "primary" }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  onClick={handleNav}
-                  className="relative block"
-                >
-                  {({ isActive }) => {
-                    const active =
-                      isActive ||
-                      (activeForPrefix !== undefined &&
-                        window.location.pathname.startsWith(activeForPrefix));
-                    const styles = ACCENT_STYLES[accent];
-                    return (
-                      <span
-                        className={cn(
-                          "flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-sm font-medium transition-all duration-150",
-                          active
-                            ? cn("border shadow-sm", styles.active)
-                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:border-sidebar-border",
-                        )}
-                      >
-                        <Icon
+              <div className="space-y-1">
+                {group.items.map(({ label, to, icon: Icon, activeForPrefix }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={handleNav}
+                    className="relative block"
+                  >
+                    {({ isActive }) => {
+                      const active =
+                        isActive ||
+                        (activeForPrefix !== undefined &&
+                          window.location.pathname.startsWith(activeForPrefix));
+                      return (
+                        <span
                           className={cn(
-                            "h-4 w-4 shrink-0 transition-colors",
-                            active ? styles.icon : "text-sidebar-foreground/50",
+                            "relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-all duration-150 cursor-pointer",
+                            active ? ACTIVE_CLASS : INACTIVE_CLASS,
                           )}
-                          aria-hidden="true"
-                        />
-                        <span>{label}</span>
-                      </span>
-                    );
-                  }}
-                </NavLink>
-              ))}
+                        >
+                          {active && (
+                            <span
+                              className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary"
+                              aria-hidden="true"
+                            />
+                          )}
+                          <Icon
+                            className={cn(
+                              "h-4 w-4 shrink-0 transition-colors",
+                              active ? "text-primary" : "text-sidebar-foreground/40",
+                            )}
+                            aria-hidden="true"
+                          />
+                          <span>{label}</span>
+                        </span>
+                      );
+                    }}
+                  </NavLink>
+                ))}
+              </div>
             </div>
           ))}
         </nav>
 
-        <div className="border-t border-sidebar-border p-3">
-          <div className="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-accent/50 px-3 py-2.5 text-xs shadow-sm">
+        {/* Status footer — subdued, informational */}
+        <div className="border-t border-sidebar-border p-2.5">
+          <div className="flex items-center gap-2.5 rounded-lg border border-sidebar-border bg-sidebar-accent/40 px-3 py-2 text-xs">
             <span
               className={cn(
                 "h-2 w-2 shrink-0 rounded-full ring-2 ring-offset-1 ring-offset-sidebar",
                 version.isSuccess
-                  ? "bg-success ring-success/30 shadow-[0_0_6px_theme(colors.success)]"
+                  ? "bg-success ring-success/30"
                   : "bg-muted-foreground ring-muted-foreground/20",
               )}
               aria-hidden="true"
             />
-            <span className="text-sidebar-foreground/80">
+            <span className="flex-1 text-sidebar-foreground/75">
               {version.data?.environment === "production" ? "Production" : version.data?.environment === "staging" ? "Staging" : "Local"}
             </span>
-            <span className="ml-auto font-mono text-xs font-medium text-sidebar-foreground">{backendVersion}</span>
+            <span className="font-mono text-[11px] font-medium text-sidebar-foreground/60">{backendVersion}</span>
           </div>
         </div>
       </aside>

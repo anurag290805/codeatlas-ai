@@ -75,7 +75,6 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       icon: Languages,
       value: formatCompactNumber(data.languagesDetected),
       tone: "warning",
-      featured: true,
     },
     {
       key: "chunks",
@@ -91,7 +90,6 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
       icon: HardDrive,
       value: formatOptionalBytes(data.repositorySizeBytes),
       tone: "success",
-      featured: true,
     },
     {
       key: "repositories",
@@ -123,10 +121,11 @@ export const RepositoryMetrics: FC<RepositoryMetricsProps> = ({
     },
     {
       key: "nodes",
-      label: "Dependency nodes",
+      label: "Dependencies",
       icon: Waypoints,
       value: formatOptionalNumber(data.dependencyNodes),
       tone: "primary",
+      featured: true,
     },
     {
       key: "processing",

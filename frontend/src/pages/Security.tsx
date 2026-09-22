@@ -38,7 +38,7 @@ export default function Security() {
         icon={<ShieldCheck className="h-5 w-5" />}
         actions={
           <>
-            <Button variant="ghost" size="sm" render={<Link to={`/repositories/${repositoryId}`} />} className="gap-1.5">
+            <Button nativeButton={false} variant="ghost" size="sm" render={<Link to={`/repositories/${repositoryId}`} />} className="gap-1.5">
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to repository
             </Button>

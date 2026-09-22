@@ -55,7 +55,7 @@ export function MonacoEditor({
         value={value}
         language={language}
         path={path}
-        theme={resolvedTheme === "dark" || resolvedTheme === "colourful" ? "vs-dark" : "light"}
+        theme={resolvedTheme === "dark" ? "vs-dark" : "light"}
         loading={loading ?? <DefaultLoadingIndicator />}
         onChange={handleChange}
         onMount={() => setIsMounted(true)}
@@ -64,18 +64,24 @@ export function MonacoEditor({
           minimap: { enabled: minimap },
           wordWrap: wordWrap ? "on" : "off",
           automaticLayout: true,
-          fontSize: 13,
+          fontSize: 14,
           fontLigatures: true,
           lineNumbers: "on",
           renderLineHighlight: readOnly ? "none" : "line",
           scrollBeyondLastLine: false,
           smoothScrolling: true,
           cursorBlinking: "smooth",
-          padding: { top: 12, bottom: 12 },
+          padding: { top: 14, bottom: 14 },
           tabSize: 2,
           folding: true,
           contextmenu: !readOnly,
           domReadOnly: readOnly,
+          renderWhitespace: "selection",
+          scrollbar: {
+            useShadows: false,
+            verticalHasArrows: false,
+            horizontalHasArrows: false,
+          },
         }}
         className={cn(!isMounted && "opacity-0", "transition-opacity duration-150")}
       />

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
 
     # Gemini (server-side only)
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash", min_length=1)
+    gemini_model: str = Field(default="gemini-3.6-flash", min_length=1)
     gemini_timeout_seconds: Annotated[float, Field(gt=0)] = 60.0
     gemini_temperature: Annotated[float, Field(ge=0, le=2)] = 0.0
     gemini_max_tokens: Annotated[int, Field(gt=0)] = 512
@@ -87,9 +87,10 @@ class Settings(BaseSettings):
 
 
     # Embeddings
-    embedding_provider: str = Field(default="sentence_transformers", min_length=1)
-    embedding_model: str = Field(default="BAAI/bge-small-en-v1.5", min_length=1)
+    embedding_provider: str = Field(default="gemini", min_length=1)
+    embedding_model: str = Field(default="gemini-embedding-2", min_length=1)
     embedding_batch_size: Annotated[int, Field(gt=0)] = 32
+    embedding_dimension: Annotated[int, Field(gt=0, le=3072)] = 768
     embedding_max_input_tokens: Annotated[int, Field(gt=0)] = 256
 
     # Logging
@@ -108,6 +109,12 @@ class Settings(BaseSettings):
     # absent or unavailable, the parser uses the portable grammars bundled
     # by the tree-sitter-languages package.
     tree_sitter_languages_dir: Path = _DATA_DIR / "tree_sitter_languages"
+
+    # Parser
+    # Maximum source file size to parse, in bytes. Files larger than this
+    # limit are skipped (counted as skipped, not failed) to avoid OOM on
+    # minified bundles or binary blobs with source extensions. Default ~1 MB.
+    parser_max_file_bytes: Annotated[int, Field(gt=0)] = 1_048_576
 
     # Shared service limits
     retrieval_top_k: Annotated[int, Field(gt=0, le=200)] = 5

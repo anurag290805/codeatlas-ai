@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db import crud
 from app.db.database import get_db
+from app.core.auth import get_workspace_id
 from app.core.workspace import ensure_workspace
 from app.integrations.dependencies import Dependency, extract_dependencies
 from app.integrations.github import GithubClient
@@ -21,8 +22,8 @@ from app.models import schemas
 router = APIRouter(prefix="/repositories", tags=["intelligence"], dependencies=[Depends(ensure_workspace)])
 
 
-def _repository(repository_id: int, db: Session):
-    repository = crud.get_repository(db, repository_id)
+def _repository(repository_id: int, db: Session, workspace_id: str | None):
+    repository = crud.get_repository(db, repository_id, workspace_id=workspace_id)
     if repository is None:
         raise HTTPException(status_code=404, detail=f"Repository not found: {repository_id}")
     return repository
@@ -71,8 +72,8 @@ def _vulnerabilities(item: Dependency, client: OsvClient) -> list[schemas.Vulner
 
 
 @router.get("/{repository_id}/github", response_model=schemas.GithubIntelligenceResponse, summary="Get GitHub repository intelligence")
-def github_intelligence(repository_id: int, db: Session = Depends(get_db)) -> schemas.GithubIntelligenceResponse:
-    repository = _repository(repository_id, db)
+def github_intelligence(repository_id: int, db: Session = Depends(get_db), workspace_id: str = Depends(get_workspace_id)) -> schemas.GithubIntelligenceResponse:
+    repository = _repository(repository_id, db, workspace_id)
     data = GithubClient().metadata(repository.url)
     if data is None:
         return schemas.GithubIntelligenceResponse(available=False, message="GitHub metadata could not be loaded. Core code analysis is still available.")
@@ -80,8 +81,8 @@ def github_intelligence(repository_id: int, db: Session = Depends(get_db)) -> sc
 
 
 @router.get("/{repository_id}/dependencies", response_model=schemas.DependenciesResponse, summary="Inspect repository dependencies")
-def dependencies(repository_id: int, db: Session = Depends(get_db)) -> schemas.DependenciesResponse:
-    repository = _repository(repository_id, db)
+def dependencies(repository_id: int, db: Session = Depends(get_db), workspace_id: str = Depends(get_workspace_id)) -> schemas.DependenciesResponse:
+    repository = _repository(repository_id, db, workspace_id)
     items = extract_dependencies(repository.local_path) if repository.local_path else []
     results: list[schemas.DependencyResponse] = []
     for item in items:
@@ -92,8 +93,8 @@ def dependencies(repository_id: int, db: Session = Depends(get_db)) -> schemas.D
 
 
 @router.get("/{repository_id}/security", response_model=schemas.SecurityResponse, summary="Scan dependencies with OSV")
-def security(repository_id: int, db: Session = Depends(get_db)) -> schemas.SecurityResponse:
-    repository = _repository(repository_id, db)
+def security(repository_id: int, db: Session = Depends(get_db), workspace_id: str = Depends(get_workspace_id)) -> schemas.SecurityResponse:
+    repository = _repository(repository_id, db, workspace_id)
     items = extract_dependencies(repository.local_path) if repository.local_path else []
     client = OsvClient()
     vulnerabilities = [v for item in items for v in _vulnerabilities(item, client)]

@@ -53,14 +53,14 @@ export function Breadcrumb({ repositoryName, filePath }: BreadcrumbProps) {
 
   return (
     <nav aria-label="Breadcrumb" className="flex items-center">
-      <ol className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+      <ol className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <li className="flex items-center">
           {segments.length === 0 ? (
             <span className="font-medium text-foreground" aria-current="page">
               Home
             </span>
           ) : (
-            <Link to="/" className="transition-colors hover:text-foreground">
+            <Link to="/" className="transition-colors hover:text-foreground font-medium">
               Home
             </Link>
           )}
@@ -72,15 +72,15 @@ export function Breadcrumb({ repositoryName, filePath }: BreadcrumbProps) {
           return (
             <Fragment key={segment.path}>
               <li aria-hidden="true" className="flex items-center">
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
               </li>
               <li className="flex items-center">
                 {isLast ? (
-                  <span className="font-medium text-foreground" aria-current="page">
+                  <span className="font-semibold text-foreground" aria-current="page">
                     {segment.label}
                   </span>
                 ) : (
-                  <Link to={segment.path} className="transition-colors hover:text-foreground">
+                  <Link to={segment.path} className="transition-colors hover:text-foreground font-medium">
                     {segment.label}
                   </Link>
                 )}

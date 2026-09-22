@@ -1,6 +1,6 @@
 import { CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 
 export interface ReadinessSegment {
   label: string;
@@ -19,8 +19,9 @@ interface WorkspaceReadinessProps {
 /**
  * Primary dashboard summary showing how many of the workspace's
  * repositories are ready, processing, or failed — the single most useful
- * "what is happening" signal. Replaces a wall of undifferentiated stat
- * cards with one visual readout plus a proportionate status bar.
+ * "what is happening" signal. Follows the dashboard's dense, left-pinned
+ * language: a flat panel with a hairline header, a proportionate status
+ * bar, and a hairline-divided segment readout instead of floated chips.
  */
 export function WorkspaceReadiness({
   total,
@@ -32,29 +33,26 @@ export function WorkspaceReadiness({
   const visible = segments.filter((segment) => segment.count > 0);
 
   return (
-    <Card className={cn("bg-card", className)}>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <div>
-          <CardTitle className="text-base">Repository readiness</CardTitle>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Indexing status across your workspace
-          </p>
-        </div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/14 text-primary dark:bg-primary/18 colourful:bg-primary/16">
-          {total > 0 ? <CheckCircle2 className="h-5 w-5" /> : <Loader2 className="h-5 w-5" />}
-        </span>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <Card className={cn("border-0 bg-muted/20 shadow-none", className)}>
+      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+        <h3 className="t-heading">Repository readiness</h3>
+        {total > 0 ? (
+          <span className="text-[11px] font-medium text-success tabular-nums">{ready} ready</span>
+        ) : (
+          <Loader2 className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        )}
+      </div>
+
+      <CardContent className="space-y-3 p-4">
         <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold tracking-tight tabular-nums">{total}</span>
-          <span className="text-sm text-muted-foreground">repositories</span>
-          <span className="ml-auto text-sm text-muted-foreground tabular-nums">
-            {ready} ready
+          <span className="t-metric">{total}</span>
+          <span className="text-[13px] font-medium text-muted-foreground">
+            repositories
           </span>
         </div>
 
         <div
-          className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
+          className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted"
           role="img"
           aria-label={`${ready} of ${total} repositories ready`}
         >
@@ -72,21 +70,20 @@ export function WorkspaceReadiness({
         </div>
 
         {visible.length > 0 ? (
-          <ul className="grid gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-3 divide-x divide-border/70 rounded-md border border-border/70">
             {visible.map((segment) => {
               const Icon = segment.icon;
               return (
-                <li
-                  key={segment.label}
-                  className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs"
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span className="text-muted-foreground">{segment.label}</span>
-                  <span className="ml-auto font-semibold tabular-nums">{segment.count}</span>
-                </li>
+                <div key={segment.label} className="flex min-w-0 flex-col gap-1 px-3 py-2">
+                  <span className="flex items-center gap-1.5">
+                    <Icon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+                    <span className="t-label truncate">{segment.label}</span>
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums">{segment.count}</span>
+                </div>
               );
             })}
-          </ul>
+          </div>
         ) : (
           <p className="flex items-center gap-2 text-xs text-warning">
             <CircleAlert className="h-3.5 w-3.5" />

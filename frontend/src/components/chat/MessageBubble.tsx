@@ -90,14 +90,20 @@ export function MessageBubble({ message, onOpenCitation, className }: MessageBub
         </div>
 
         {!isUser && message.citations && message.citations.length > 0 && (
-          <div className="grid w-full gap-2 sm:grid-cols-2">
-            {message.citations.map((citation) => (
-              <CitationCard
-                key={citation.id}
-                citation={citation}
-                onOpen={onOpenCitation}
-              />
-            ))}
+          <div className="w-full space-y-1.5">
+            <div className="flex items-center gap-1.5 px-1 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+              <span className="h-px w-3 bg-border" />
+              Sources
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {message.citations.map((citation) => (
+                <CitationCard
+                  key={citation.id}
+                  citation={citation}
+                  onOpen={onOpenCitation}
+                />
+              ))}
+            </div>
           </div>
         )}
 

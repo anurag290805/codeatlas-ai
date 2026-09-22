@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ErrorState } from "@/components/common/ErrorState";
@@ -78,13 +79,14 @@ export function Search() {
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6">
       <PageHeader
+        eyebrow="Command search"
         title="Search"
         description="Find indexed repositories, files, and symbols across your workspace."
         icon={<SearchIcon className="h-5 w-5" />}
       />
 
-      <Card>
-        <CardContent className="space-y-4 p-5">
+      <Card className="border-border/70">
+        <CardContent className="space-y-4 p-4 sm:p-5">
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -100,13 +102,18 @@ export function Search() {
               aria-activedescendant={results[activeIndex] ? `search-result-${results[activeIndex].id}` : undefined}
             />
           </div>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Search scope">
+          <div className="flex flex-wrap gap-1 rounded-md border border-border/60 bg-muted/20 p-1" role="group" aria-label="Search scope">
             {SCOPES.map((value) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => setScope(value)}
-                className={`rounded-full border px-3 py-1 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${scope === value ? "border-primary/40 bg-primary/16 text-primary dark:bg-primary/20 colourful:bg-primary/18" : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                className={cn(
+                  "rounded px-3 py-1.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  scope === value
+                    ? "border-primary/40 bg-primary/12 text-primary"
+                    : "border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
                 aria-pressed={scope === value}
               >
                 {value}
@@ -116,7 +123,7 @@ export function Search() {
         </CardContent>
       </Card>
 
-      <Card id="search-results">
+      <Card id="search-results" className="border-border/70">
         <CardContent className="p-0">
           {repositoriesQuery.isLoading ? (
             <div className="space-y-3 p-5">
@@ -147,11 +154,23 @@ export function Search() {
               description="This backend does not currently expose a global scope search endpoint. Searching repositories is always available."
             />
           ) : !query.trim() ? (
-            <EmptyState
-              icon={SearchIcon}
-              title="Start typing to search"
-              description="Search across your imported repositories by name."
-            />
+            <div className="flex flex-col items-center px-6 py-12 text-center">
+              <SearchIcon className="mb-3 h-5 w-5 text-muted-foreground/60" />
+              <p className="text-sm font-medium text-foreground">Search your indexed codebase</p>
+              <p className="mt-1 text-xs text-muted-foreground">Try a repository, file, or symbol name.</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {["auth", "useEffect", "package.json", "handleSubmit"].map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => handleQueryChange(example)}
+                    className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : results.length === 0 ? (
             <EmptyState
               icon={FolderGit2}

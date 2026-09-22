@@ -18,8 +18,8 @@ from loguru import logger
 
 from app.config import get_settings
 
-DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-_CHARS_PER_TOKEN_ESTIMATE = 4
+DEFAULT_EMBEDDING_MODEL = "models/text-embedding-004"
+CHARS_PER_TOKEN_ESTIMATE = 4
 
 
 class EmbeddingError(Exception):
@@ -224,9 +224,16 @@ class EmbeddingService:
         *,
         expected_dimension: int | None = None,
     ) -> None:
-        self._provider = provider or SentenceTransformerProvider()
-        self._expected_dimension = expected_dimension
-        self._dimension: int | None = expected_dimension
+        # Default dimension from settings; if not configured, derive from provider or default 768
+        settings = get_settings()
+        default_dim = getattr(settings, "embedding_dimension", 768)
+        if provider is not None:
+            self._provider = provider
+        else:
+            from app.core.gemini_embeddings import GeminiEmbeddingProvider
+            self._provider = GeminiEmbeddingProvider(output_dimensionality=default_dim)
+        self._expected_dimension = expected_dimension or getattr(provider, 'dimension', None) or default_dim
+        self._dimension: int | None = self._expected_dimension
         logger.info("Embedding service ready provider={} model={}", self.provider_name, self.model_name)
 
     @property
@@ -365,7 +372,7 @@ def estimate_token_count(text: str) -> int:
     """Estimate token count using a conservative character heuristic."""
     if not isinstance(text, str):
         raise EmbeddingInputError("Token estimation requires a string")
-    return max(1, len(text) // _CHARS_PER_TOKEN_ESTIMATE)
+    return max(1, len(text) // CHARS_PER_TOKEN_ESTIMATE)
 
 
 # Backward-compatible name for consumers written against the previous module.

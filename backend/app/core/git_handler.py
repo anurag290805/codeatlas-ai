@@ -40,6 +40,16 @@ _GITHUB_HTTPS_URL_PATTERN = re.compile(
     r"^https://github\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<name>[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
 )
 
+# Wall-clock deadline (seconds) applied to every network-bound Git subprocess
+# (clone, fetch, pull). A stalled remote must never pin a worker thread
+# indefinitely -- otherwise a wedged import sits in "indexing" forever and the
+# in-process worker cannot be reaped. On expiry GitPython SIGKILLs the
+# subprocess and raises GitCommandError, which callers translate to
+# RepositoryOperationError, so the pipeline records a clean failure instead of
+# hanging. Value is generous enough for normal large clones; long-lived runs
+# stay alive via the indexing heartbeat, not by relaxing this deadline.
+GIT_OPERATION_TIMEOUT_SECONDS = 300
+
 
 class RepositoryStatus(str, Enum):
     """Lifecycle status of a repository on local disk.
@@ -143,7 +153,6 @@ class GitRepositoryHandler:
         name = match.group("name")
         full_name = f"{owner}/{name}"
         canonical_url = f"https://github.com/{full_name}"
-
         return RepositoryIdentity(
             owner=owner, name=name, full_name=full_name, canonical_url=canonical_url
         )
@@ -240,7 +249,12 @@ class GitRepositoryHandler:
         logger.info("Cloning repository %s into %s", identity.full_name, local_path)
         try:
             clone_kwargs = {"branch": branch} if branch else {}
-            Repo.clone_from(identity.canonical_url, local_path, **clone_kwargs)
+            Repo.clone_from(
+                identity.canonical_url,
+                local_path,
+                kill_after_timeout=GIT_OPERATION_TIMEOUT_SECONDS,
+                **clone_kwargs,
+            )
         except GitCommandError as exc:
             logger.error("Clone failed for repository %s: %s", identity.full_name, exc)
             remove_directory(local_path, missing_ok=True)
@@ -314,8 +328,8 @@ class GitRepositoryHandler:
         try:
             logger.info("Fetching updates for repository %s", identity.full_name)
             origin = repo.remotes.origin
-            origin.fetch()
-            origin.pull()
+            origin.fetch(kill_after_timeout=GIT_OPERATION_TIMEOUT_SECONDS)
+            origin.pull(kill_after_timeout=GIT_OPERATION_TIMEOUT_SECONDS)
         except GitCommandError as exc:
             logger.error("Pull failed for repository %s: %s", identity.full_name, exc)
             raise RepositoryOperationError(

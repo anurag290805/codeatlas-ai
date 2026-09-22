@@ -14,11 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/common/PageHeader";
-import { SectionHeader } from "@/components/common/SectionHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ErrorState } from "@/components/common/ErrorState";
 import { ImportRepositoryDialog, type ImportRepositoryFormValues } from "@/components/dashboard/ImportRepositoryDialog";
-import { HealthStatus } from "@/components/dashboard/HealthStatus";
 import { RecentActivity, type ActivityItem } from "@/components/dashboard/RecentActivity";
 import { RepositoryCard } from "@/components/dashboard/RepositoryCard";
 import { StatsCard } from "@/components/dashboard/StatisticsCard";
@@ -27,6 +25,7 @@ import { useDeleteRepository, useImportRepository, useRepositories } from "@/hoo
 import { useNavigate } from "react-router-dom";
 import type { RepositoryListItem } from "@/types/repository";
 import type { RepositoryStatusValue } from "@/components/dashboard/RepositoryStatus";
+import { cn } from "@/lib/utils";
 
 const STATUS_MAP: Record<RepositoryListItem["status"], RepositoryStatusValue> = {
   pending: "importing",
@@ -153,8 +152,8 @@ export function Dashboard() {
       await importRepository.mutateAsync({ url: repositoryUrl });
       setIsImportDialogOpen(false);
       setFeedback("Repository import started successfully.");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Repository import failed.");
+    } catch {
+      setFeedback("CodeAtlas couldn't start this repository import. Try again.");
     }
   };
 
@@ -164,8 +163,8 @@ export function Dashboard() {
     try {
       await deleteRepository.mutateAsync(String(repository.id));
       setFeedback("Repository deleted successfully.");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Repository deletion failed.");
+    } catch {
+      setFeedback("CodeAtlas couldn't delete this repository. Try again.");
     }
   };
 
@@ -174,10 +173,16 @@ export function Dashboard() {
   const isEmpty = !isLoading && !hasError && repositories.length === 0;
 
   return (
-    <div className="space-y-5">
+    <div className="flex min-h-full flex-col gap-5 lg:min-h-[calc(100dvh-12rem)] lg:justify-between">
       <PageHeader
-        title="Dashboard"
-        description="An overview of your repositories, activity, and platform health."
+        eyebrow="Workspace overview"
+        className="[&_h1]:text-[1.4rem] sm:[&_h1]:text-[1.45rem]"
+        title="Your code intelligence workspace"
+        description={
+          repositories.length > 0
+            ? `${formatCount(repositories.length)} repositories in view · ${formatCount(indexedRepositories)} ready for questions`
+            : "Import a repository to start building a searchable map of your code."
+        }
         actions={
           <Button
             variant="outline"
@@ -193,8 +198,8 @@ export function Dashboard() {
       />
 
       {feedback && (
-        <Card>
-          <CardContent className="p-4 text-sm text-muted-foreground">{feedback}</CardContent>
+        <Card className="border-border/60 bg-muted/30">
+          <CardContent className="py-3 px-4 text-sm text-foreground font-medium">{feedback}</CardContent>
         </Card>
       )}
 
@@ -214,119 +219,151 @@ export function Dashboard() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-          {isLoading ? (
-            <Card>
-              <CardHeader className="space-y-2">
-                <Skeleton className="h-5 w-1/3" />
-                <Skeleton className="h-4 w-1/2" />
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Skeleton className="h-8 w-1/4" />
-                <Skeleton className="h-2 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </CardContent>
-            </Card>
-          ) : (
-            <WorkspaceReadiness total={repositories.length} segments={readinessSegments} />
-          )}
-          <RecentActivity
-            activities={isLoading ? [] : activities}
-            className={isLoading ? "opacity-0" : undefined}
-          />
-        </div>
-      )}
-
-      <section aria-label="Indexed data" className="space-y-3">
-        <SectionHeader
-          title="Indexed data"
-          description="Aggregate source files, retrieved chunks, and stored vectors."
-        />
-        <div className="grid gap-3 sm:grid-cols-3">
-          <StatsCard
-            icon={FileCode2}
-            title="Indexed files"
-            value={isLoading ? "—" : formatCount(totalFiles)}
-            subtitle="Across all repositories"
-            tone="info"
-          />
-          <StatsCard
-            icon={Boxes}
-            title="Code chunks"
-            value={isLoading ? "—" : formatCount(totalChunks)}
-            subtitle="Ready for retrieval"
-            tone="primary"
-          />
-          <StatsCard
-            icon={Database}
-            title="Embeddings"
-            value={isLoading ? "—" : formatCount(totalEmbeddings)}
-            subtitle="Stored vectors"
-            tone="success"
-          />
-        </div>
-      </section>
-
-      <section aria-label="Repositories" className="space-y-3">
-        <SectionHeader
-          title="Repositories"
-          description="Open, refresh, or delete an imported repository."
-          action={
-            !isEmpty && (
-              <span className="text-xs text-muted-foreground">{formatCount(repositories.length)} total</span>
-            )
-          }
-        />
-        {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {["repository-skeleton-1", "repository-skeleton-2", "repository-skeleton-3"].map((key) => (
-              <Card key={key}>
+        <>
+          {/* Repository readiness + recent activity — tight two-column on desktop */}
+          <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
+            {isLoading ? (
+              <Card>
                 <CardHeader className="space-y-2">
-                  <Skeleton className="h-5 w-2/3" />
-                  <Skeleton className="h-4 w-1/3" />
+                  <Skeleton className="h-5 w-1/3" />
+                  <Skeleton className="h-4 w-1/2" />
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
+                <CardContent className="space-y-2">
+                  <Skeleton className="h-8 w-1/4" />
+                  <Skeleton className="h-2 w-full" />
+                  <Skeleton className="h-10 w-full" />
                 </CardContent>
               </Card>
-            ))}
+            ) : (
+              <WorkspaceReadiness total={repositories.length} segments={readinessSegments} />
+            )}
+            <RecentActivity
+              activities={isLoading ? [] : activities}
+              className={isLoading ? "opacity-0" : undefined}
+            />
           </div>
-        ) : isEmpty ? (
-          <EmptyState
-            icon={LayoutDashboard}
-            title="No repositories yet"
-            description="Import a GitHub repository to start building your code intelligence workspace."
-            action={
-              <Button onClick={() => setIsImportDialogOpen(true)} className="gap-1.5">
-                <Import className="h-4 w-4" />
-                Import repository
-              </Button>
-            }
-          />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {repositories.map((repository) => (
-              <RepositoryCard
-                key={repository.id}
-                name={repositoryName(repository)}
-                owner={repositoryOwner(repository)}
-                visibility="public"
-                defaultBranch={repository.default_branch}
-                size={formatRepositorySize(repository)}
-                lastUpdated={formatRelativeTime(repository.last_indexed_at)}
-                status={STATUS_MAP[repository.status]}
-                isLoading={false}
-                onOpen={() => navigate(`/repositories/${repository.id}`)}
-                onRefresh={() => void repositoriesQuery.refetch()}
-                onDelete={() => void handleDelete(repository)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
 
-      <HealthStatus />
+          {/* Indexed data — one left-aligned, hairline-divided metric strip.
+              No floating boxes: columns are separated by hairlines so the
+              whole readout reads as a single anchored data row. */}
+          <section aria-label="Indexed data" className="border-t border-border/70 pt-4">
+            <div className="mb-2 flex items-end justify-between gap-4">
+              <div>
+                <p className="t-label">Knowledge base</p>
+                <h2 className="t-heading mt-1">Indexed data</h2>
+              </div>
+              <span className="hidden text-xs text-muted-foreground sm:block">Across this workspace</span>
+            </div>
+            <div className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/70 bg-card sm:grid sm:grid-cols-3 sm:divide-y-0 sm:divide-x">
+              <div className="px-4 py-3 sm:flex sm:flex-col sm:justify-center">
+                <StatsCard
+                  icon={FileCode2}
+                  title="Indexed files"
+                  value={isLoading ? "—" : formatCount(totalFiles)}
+                  subtitle="Across all repositories"
+                  tone="neutral"
+                />
+              </div>
+              <div className="px-4 py-3 sm:flex sm:flex-col sm:justify-center">
+                <StatsCard
+                  icon={Boxes}
+                  title="Code chunks"
+                  value={isLoading ? "—" : formatCount(totalChunks)}
+                  subtitle="Ready for retrieval"
+                  tone="neutral"
+                />
+              </div>
+              <div className="px-4 py-3 sm:flex sm:flex-col sm:justify-center">
+                <StatsCard
+                  icon={Database}
+                  title="Embeddings"
+                  value={isLoading ? "—" : formatCount(totalEmbeddings)}
+                  subtitle="Stored vectors"
+                  tone="neutral"
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Repositories — dense, hairline-separated list.
+              Left-anchored rows read like GitHub / Vercel listings, not a
+              grid of floating boxes. */}
+          <section aria-label="Repositories" className="border-t border-border/70 pt-4">
+            <div className="mb-2 flex items-center justify-between gap-4">
+              <h2 className="t-heading">Repositories</h2>
+              {!isEmpty && repositories.length > 0 && (
+                <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                  {formatCount(repositories.length)} total
+                </span>
+              )}
+            </div>
+
+            {isLoading ? (
+              <div className="space-y-1">
+                {["repository-skeleton-1", "repository-skeleton-2", "repository-skeleton-3"].map((key) => (
+                  <div key={key} className="flex items-center gap-3 px-2 py-3">
+                    <Skeleton className="h-7 w-7 shrink-0 rounded-md" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-1/3" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : isEmpty ? (
+              <EmptyState
+                icon={LayoutDashboard}
+                className="mx-auto flex min-h-56 w-full max-w-2xl border-border/50 bg-card/30 py-8"
+                title="No repositories yet"
+                description="Import a GitHub repository to start building your code intelligence workspace."
+                action={
+                  <Button onClick={() => setIsImportDialogOpen(true)} className="gap-1.5">
+                    <Import className="h-4 w-4" />
+                    Import repository
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+                {repositories.map((repository, index) => (
+                  <div
+                    key={repository.id}
+                    className={cn(
+                      "border-border/60",
+                      index > 0 && "border-t",
+                    )}
+                  >
+                    <RepositoryCard
+                      key={repository.id}
+                      variant="row"
+                      name={repositoryName(repository)}
+                      owner={repositoryOwner(repository)}
+                      visibility="public"
+                      defaultBranch={repository.default_branch}
+                      size={formatRepositorySize(repository)}
+                      lastUpdated={formatRelativeTime(repository.last_indexed_at)}
+                      status={STATUS_MAP[repository.status]}
+                      isLoading={false}
+                      stage={repository.stage}
+                      progressPercent={repository.progress_percent}
+                      processedFiles={repository.processed_files}
+                      totalFiles={repository.files_indexed}
+                      processedChunks={repository.processed_chunks}
+                      totalChunks={repository.chunks_generated}
+                      processedEmbeddings={repository.processed_embeddings}
+                      totalEmbeddings={repository.embeddings_generated}
+                      onOpen={() => navigate(`/repositories/${repository.id}`)}
+                      onRefresh={() => void repositoriesQuery.refetch()}
+                      onDelete={() => void handleDelete(repository)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+        </>
+      )}
 
       <ImportRepositoryDialog
         open={isImportDialogOpen}

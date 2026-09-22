@@ -231,9 +231,18 @@ class GeminiProvider(AbstractLLMProvider):
         try:
             response = await self._client.post("/v1beta/interactions", headers={"x-goog-api-key": self._settings.gemini_api_key}, json=body, timeout=self._settings.gemini_timeout_seconds)
         except httpx.TimeoutException as exc:
+            logger.warning("Gemini generation timed out model={}", body["model"])
             raise LLMTimeoutError("Gemini generation timed out.") from exc
         except httpx.RequestError as exc:
+            logger.warning("Gemini generation request failed model={} error_type={}", body["model"], type(exc).__name__)
             raise LLMProviderOutageError("Gemini could not be reached.") from exc
+        if response.status_code >= 400:
+            logger.warning(
+                "Gemini generation rejected status={} model={} response={}",
+                response.status_code,
+                body["model"],
+                _safe_provider_detail(response.text, self._settings.gemini_api_key),
+            )
         if response.status_code in {401, 403}:
             raise LLMAuthenticationError("Gemini rejected the configured API key.")
         if response.status_code == 404:
@@ -257,6 +266,7 @@ class GeminiProvider(AbstractLLMProvider):
         usage = UsageMetadata(prompt_tokens=int(usage_data.get("total_input_tokens", 0)), completion_tokens=int(usage_data.get("total_output_tokens", 0)), total_tokens=int(usage_data.get("total_tokens", 0))) if usage_data else None
         return text, usage
 
+
     async def generate_stream(self, request: LLMRequest) -> AsyncIterator[LLMStreamChunk]:
         text, usage = await self.generate(request)
         yield LLMStreamChunk(delta=text, is_final=True, model=request.model or self.model_name, usage=usage)
@@ -265,6 +275,12 @@ class GeminiProvider(AbstractLLMProvider):
     def _prompt(request: LLMRequest) -> str:
         context = request.context.strip() or "(No repository context was retrieved.)"
         return f"<repository_context>\n{context}\n</repository_context>\n\n<question>\n{request.query}\n</question>"
+
+
+def _safe_provider_detail(response_text: str, api_key: str) -> str:
+    """Return bounded provider diagnostics without logging credentials."""
+    detail = response_text.replace(api_key, "[redacted]") if api_key else response_text
+    return " ".join(detail.split())[:500]
 
 
 class OmniRouteProvider(AbstractLLMProvider):

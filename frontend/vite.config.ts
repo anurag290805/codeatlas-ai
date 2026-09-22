@@ -16,4 +16,9 @@ export default defineConfig({
       "@": path.resolve(projectDirectory, "./src"),
     },
   },
+  optimizeDeps: {
+    // Recharts imports this CommonJS package through a default export.
+    // Prebundle it separately so Vite preserves the constructor shape.
+    include: ["decimal.js-light"],
+  },
 });

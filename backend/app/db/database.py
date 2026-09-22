@@ -152,6 +152,7 @@ def initialize_database() -> None:
         # router import order when this function is called from a script or
         # test suite.
         from app.models import db_models  # noqa: F401
+        from app.core.vector_store import VectorRow  # noqa: F401
 
         logger.info("Ensuring database schema exists without modifying existing data.")
         Base.metadata.create_all(bind=engine)

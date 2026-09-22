@@ -267,11 +267,11 @@ export const AIComposer: FC<AIComposerProps> = ({
 
       <div
         className={cn(
-          "rounded-2xl border border-border/60 bg-card/60 shadow-lg shadow-black/20 backdrop-blur-md transition-shadow",
-          "focus-within:border-primary/50 focus-within:shadow-primary/10",
+          "rounded-xl border border-border/70 bg-card transition-colors",
+          "focus-within:border-primary/50",
         )}
       >
-        <div className="flex items-center gap-1.5 border-b border-border/40 px-3.5 py-2">
+        <div className="flex items-center gap-1.5 border-b border-border/40 px-3 py-1.5">
           {branchName && (
             <Badge variant="outline" className="gap-1 border-border/60 font-normal text-muted-foreground">
               <GitBranch className="h-3 w-3" />
@@ -303,7 +303,7 @@ export const AIComposer: FC<AIComposerProps> = ({
           )}
         </div>
 
-        <div className="flex items-end gap-2 px-3.5 py-3">
+        <div className="flex items-end gap-2 px-3 py-2.5">
           <textarea
             ref={textareaRef}
             value={value}

@@ -162,7 +162,7 @@ export function Repository() {
       <Breadcrumb repositoryName={repository.name} filePath={selectedPath} />
 
       <div className="flex items-center justify-between gap-3">
-        <Button variant="ghost" size="sm" render={<Link to="/repositories" />} className="gap-1.5">
+        <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/repositories" />} className="gap-1.5">
           <ArrowLeft className="h-3.5 w-3.5" />
           Repositories
         </Button>
@@ -253,7 +253,7 @@ export function Repository() {
           isFileLoading={fileQuery.isLoading}
           fileError={fileQuery.error}
           onFileSelect={(path) => setSelection({ repositoryId: repositoryId ?? "", path })}
-          className="h-[42rem]"
+          className="h-[min(42rem,calc(100vh-24rem))] min-h-[28rem]"
         />
       </section>
     </div>

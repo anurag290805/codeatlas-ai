@@ -95,7 +95,7 @@ def test_analyze_mode_does_not_modify_files(tmp_path, monkeypatch) -> None:
         async def generate_answer(self, retrieval):
             return SimpleNamespace(answer="read-only")
 
-    result = asyncio.run(AgentOrchestrator(Retriever(), LLM()).run(1, "Explain main.py", 3))
+    result = asyncio.run(AgentOrchestrator(Retriever(), LLM()).run(1, "Explain main.py", 3, workspace_id="test-workspace"))
     assert result.status is TaskStatus.COMPLETED
     assert target.read_text() == "answer = 1\n"
 
@@ -109,7 +109,7 @@ def test_modify_mode_requires_repository_metadata(tmp_path) -> None:
         pass
 
     with pytest.raises(ValueError, match="Repository metadata"):
-        asyncio.run(AgentOrchestrator(Retriever(), LLM()).run(1, "improve", 3, mode="modify"))
+        asyncio.run(AgentOrchestrator(Retriever(), LLM()).run(1, "improve", 3, mode="modify", workspace_id="test-workspace"))
 
 
 def test_repository_root_and_path_boundaries(tmp_path, monkeypatch) -> None:
