@@ -1,6 +1,6 @@
 // src/components/repository/FileExplorer.tsx
 import { useState } from "react";
-import { FileQuestion } from "lucide-react";
+import { FileQuestion, FolderOpen } from "lucide-react";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/resizable";
 import { FileTree } from "@/components/repository/FileTree";
 import { FileViewer } from "@/components/repository/FileViewer";
+import { cn } from "@/lib/utils";
 import type { FileContent, FileTreeNode } from "@/types";
 
 interface FileExplorerProps {
@@ -30,9 +31,6 @@ interface FileExplorerProps {
  * Composes the repository browsing experience — a file tree on the
  * left and a file viewer on the right — in a resizable, IDE-style
  * layout on desktop and a stacked layout on mobile.
- *
- * Purely presentational: all file data is supplied via props, and the
- * only state owned here is which path is currently selected.
  */
 export function FileExplorer({
   fileTree,
@@ -52,27 +50,43 @@ export function FileExplorer({
   };
 
   const emptyState = (
-    <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
-      <FileQuestion className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
-      <p className="text-sm font-medium text-foreground">No file selected</p>
-      <p className="text-xs text-muted-foreground">
-        Choose a file from the tree to view its contents.
-      </p>
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60 border border-border/60">
+        <FileQuestion className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">No file selected</p>
+        <p className="text-xs text-muted-foreground">
+          Choose a file from the tree to view its contents.
+        </p>
+      </div>
     </div>
   );
 
   return (
-    <div className={className}>
-      <div className="hidden h-full overflow-hidden rounded-lg border md:flex">
-        <ResizablePanelGroup orientation="horizontal">
-          <ResizablePanel defaultSize={25} minSize={15} maxSize={45}>
-            <div className="h-full overflow-y-auto border-r bg-muted/30">
-              <FileTree nodes={fileTree} selectedPath={activePath} onSelectFile={handleSelectFile} />
+    <div className={cn("w-full min-w-0", className)}>
+      {/* Desktop — resizable panels */}
+      <div className="hidden h-full min-h-[28rem] w-full min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card md:flex">
+        <ResizablePanelGroup orientation="horizontal" className="h-full w-full min-w-0">
+          <ResizablePanel defaultSize={28} minSize={20} maxSize={44} className="min-w-[16rem]">
+            <div className="flex h-full w-full min-w-0 flex-col border-r border-border/60 bg-muted/20">
+              <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border/50 px-3">
+                <FolderOpen className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" aria-hidden="true" />
+                <span className="text-xs font-medium text-muted-foreground">Explorer</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                <FileTree
+                  nodes={fileTree}
+                  selectedPath={activePath}
+                  onSelectFile={handleSelectFile}
+                  className="w-full min-w-0"
+                />
+              </div>
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={75}>
-            <div className="h-full overflow-y-auto bg-background">
+          <ResizablePanel defaultSize={72} minSize={56} className="min-w-0">
+            <div className="h-full min-w-0 overflow-hidden bg-background">
               {activePath ? (
                 <FileViewer
                   file={selectedFile}
@@ -85,11 +99,16 @@ export function FileExplorer({
         </ResizablePanelGroup>
       </div>
 
-      <div className="flex flex-col gap-4 md:hidden">
-        <div className="max-h-64 overflow-y-auto rounded-lg border bg-muted/30">
+      {/* Mobile — stacked layout */}
+      <div className="flex flex-col gap-3 md:hidden">
+        <div className="max-h-72 overflow-y-auto rounded-lg border border-border/60 bg-muted/20">
+          <div className="flex h-10 items-center gap-1.5 border-b border-border/50 px-3">
+            <FolderOpen className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+            <span className="text-xs font-medium text-muted-foreground">Explorer</span>
+          </div>
           <FileTree nodes={fileTree} selectedPath={activePath} onSelectFile={handleSelectFile} />
         </div>
-        <div className="min-h-[16rem] overflow-y-auto rounded-lg border bg-background">
+        <div className="min-h-[18rem] overflow-hidden rounded-lg border border-border/60 bg-background">
           {activePath ? (
             <FileViewer file={selectedFile} isLoading={isFileLoading} error={fileError} />
           ) : emptyState}

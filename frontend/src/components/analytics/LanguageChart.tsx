@@ -90,7 +90,7 @@ export const LanguageChart: FC<LanguageChartProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.25 }}
-            className="h-64 w-full"
+            className={cn("w-full", chartData.length === 1 ? "h-32" : "h-64")}
           >
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -98,8 +98,12 @@ export const LanguageChart: FC<LanguageChartProps> = ({
                   data={chartData}
                   dataKey="percentage"
                   nameKey="language"
-                  innerRadius={0}
-                  outerRadius="80%"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={chartData.length === 1 ? "52%" : 0}
+                  outerRadius={chartData.length === 1 ? "78%" : "80%"}
+                  startAngle={90}
+                  endAngle={-270}
                   paddingAngle={1}
                   stroke="var(--card)"
                   strokeWidth={2}
@@ -111,6 +115,11 @@ export const LanguageChart: FC<LanguageChartProps> = ({
                     />
                   ))}
                 </Pie>
+                {chartData.length === 1 && (
+                  <text x="50%" y="45%" textAnchor="middle" dominantBaseline="middle" className="fill-foreground text-sm font-semibold">
+                    100%
+                  </text>
+                )}
                 <Tooltip content={<LanguageTooltip />} />
                 <Legend
                   verticalAlign="bottom"

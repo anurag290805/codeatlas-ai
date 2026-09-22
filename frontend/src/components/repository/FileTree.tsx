@@ -90,17 +90,32 @@ export function FileTree({
   defaultExpandedPaths = [],
   className,
 }: FileTreeProps) {
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
-    () => new Set(defaultExpandedPaths),
-  );
+  const initialExpandedPaths = useMemo(() => {
+    if (defaultExpandedPaths.length > 0) return new Set(defaultExpandedPaths);
+
+    const paths = new Set<string>();
+    const visit = (entries: FileTreeNode[]) => {
+      for (const entry of entries) {
+        if (entry.type === "directory") {
+          paths.add(entry.path);
+          if (entry.children) visit(entry.children);
+        }
+      }
+    };
+    visit(nodes);
+    return paths;
+  }, [defaultExpandedPaths, nodes]);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string> | null>(null);
   const [focusedPath, setFocusedPath] = useState<string | null>(
     selectedPath ?? nodes[0]?.path ?? null,
   );
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  const activeExpandedPaths = expandedPaths ?? initialExpandedPaths;
+
   const visibleNodes = useMemo(
-    () => flattenVisibleNodes(nodes, expandedPaths),
-    [nodes, expandedPaths],
+    () => flattenVisibleNodes(nodes, activeExpandedPaths),
+    [nodes, activeExpandedPaths],
   );
 
   const focusRow = useCallback((path: string) => {
@@ -111,7 +126,7 @@ export function FileTree({
   const toggleDirectory = useCallback(
     (node: FileTreeNode) => {
       setExpandedPaths((previous) => {
-        const next = new Set(previous);
+        const next = new Set(previous ?? activeExpandedPaths);
         if (next.has(node.path)) {
           next.delete(node.path);
         } else {
@@ -123,7 +138,7 @@ export function FileTree({
         return next;
       });
     },
-    [onExpandDirectory],
+    [activeExpandedPaths, onExpandDirectory],
   );
 
   const handleActivate = useCallback(
@@ -157,7 +172,7 @@ export function FileTree({
         case "ArrowRight": {
           event.preventDefault();
           if (flatNode.node.type === "directory") {
-            if (!expandedPaths.has(flatNode.node.path)) {
+            if (!activeExpandedPaths.has(flatNode.node.path)) {
               toggleDirectory(flatNode.node);
             } else {
               const next = visibleNodes[index + 1];
@@ -168,7 +183,7 @@ export function FileTree({
         }
         case "ArrowLeft": {
           event.preventDefault();
-          if (flatNode.node.type === "directory" && expandedPaths.has(flatNode.node.path)) {
+          if (flatNode.node.type === "directory" && activeExpandedPaths.has(flatNode.node.path)) {
             toggleDirectory(flatNode.node);
           } else if (flatNode.depth > 0) {
             for (let i = index - 1; i >= 0; i -= 1) {
@@ -190,7 +205,7 @@ export function FileTree({
           break;
       }
     },
-    [visibleNodes, expandedPaths, toggleDirectory, focusRow, handleActivate],
+    [visibleNodes, activeExpandedPaths, toggleDirectory, focusRow, handleActivate],
   );
 
   if (nodes.length === 0) {
@@ -202,10 +217,10 @@ export function FileTree({
   }
 
   return (
-    <div role="tree" aria-label="Repository files" className={cn("select-none py-1", className)}>
+    <div role="tree" aria-label="Repository files" className={cn("w-full min-w-0 select-none py-1", className)}>
       {visibleNodes.map((flatNode) => {
         const { node, depth, hasChildren } = flatNode;
-        const isExpanded = expandedPaths.has(node.path);
+        const isExpanded = activeExpandedPaths.has(node.path);
         const isSelected = selectedPath === node.path;
         const isFocused = focusedPath === node.path;
         const Icon =
@@ -233,11 +248,11 @@ export function FileTree({
               setFocusedPath(node.path);
               handleActivate(node);
             }}
-            style={{ paddingLeft: `${depth * 16 + 8}px` }}
+            style={{ paddingLeft: `${depth * 14 + 6}px` }}
             className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-sm",
-              "transition-colors hover:bg-muted/60",
-              isSelected && "bg-accent text-accent-foreground",
+              "flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md py-[3px] pr-2 text-[13px] leading-5 text-foreground",
+              "transition-colors hover:bg-accent/60",
+              isSelected && "bg-primary/12 text-primary font-medium dark:bg-primary/18",
             )}
           >
             {node.type === "directory" ? (
@@ -262,7 +277,7 @@ export function FileTree({
               />
             )}
 
-            <span className="truncate">{node.name}</span>
+            <span className="min-w-0 flex-1 truncate" title={node.name}>{node.name}</span>
           </div>
         );
       })}
