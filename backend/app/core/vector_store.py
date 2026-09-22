@@ -173,15 +173,54 @@ def _storage_metadata_to_record(chunk_id: str, storage_metadata: dict[str, Any])
 # SQLAlchemy ORM model for the shared pgvector table
 try:
     from pgvector.sqlalchemy import Vector
+    # Enhanced pgvector.Vector to generate extensions.vector() for PostgreSQL
+    class VectorWithExtension(Vector):
+        def get_colspec(self, **kw):
+            settings = get_settings()
+            database_url = getattr(settings, 'DATABASE_URL', '')
+            # Check if we're using PostgreSQL to reference the extensions schema
+            if database_url and database_url.startswith(("postgresql://", "postgres://")):
+                return f"extensions.vector({self.dim})"
+            else:
+                return super().get_colspec(**kw)
+
+        def bind_processor(self, dialect):
+            # Add a dialect-level processor to ensure proper type name
+            def process(value):
+                # Return the appropriate type name based on dialect
+                if dialect.name == "postgresql":
+                    return f"extensions.vector({self.dim})"
+                return super().bind_processor(dialect)(value) if hasattr(super(), 'bind_processor') else value
+            return process
+
+    Vector = VectorWithExtension
 except Exception:  # pragma: no cover
     # Fallback if pgvector SQLAlchemy package not installed; still produces correct SQL.
     from sqlalchemy.types import UserDefinedType
+    from app.config import get_settings
+
     class Vector(UserDefinedType):
         def __init__(self, dim: int = 768):
             self.dim = dim
             super().__init__()
+
         def get_colspec(self, **kw):
-            return f"VECTOR({self.dim})"
+            settings = get_settings()
+            database_url = getattr(settings, 'DATABASE_URL', '')
+            # Check if we're using PostgreSQL to reference the extensions schema
+            if database_url and database_url.startswith(("postgresql://", "postgres://")):
+                return f"extensions.vector({self.dim})"
+            else:
+                return f"VECTOR({self.dim})"
+
+        def bind_processor(self, dialect):
+            # Add a dialect-level processor to ensure proper type name
+            def process(value):
+                # Return the appropriate type name based on dialect
+                if dialect.name == "postgresql":
+                    return f"extensions.vector({self.dim})"
+                return f"VECTOR({self.dim})"
+            return process
 
 from sqlalchemy.orm import Mapped, mapped_column
 
