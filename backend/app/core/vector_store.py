@@ -363,7 +363,7 @@ class PgVectorStore(AbstractVectorStore):
                 "start_line INTEGER," +
                 "end_line INTEGER," +
                 "code TEXT NOT NULL DEFAULT ''," +
-                "embedding VECTOR(" + str(_EMBEDDING_DIM) + ") NOT NULL," +
+                "embedding extensions.vector(" + str(_EMBEDDING_DIM) + ") NOT NULL," +
                 "metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb," +
                 "generation_version INTEGER," +
                 "created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()" +
