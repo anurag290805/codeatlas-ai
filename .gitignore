@@ -129,6 +129,13 @@ frontend/build/
 .settings/
 *.code-workspace
 
+# Local AI coding-agent metadata
+.claude/
+.codex/
+.cursor/
+.opencode/
+.playwright-mcp/
+
 # OS metadata
 .DS_Store
 .AppleDouble
