@@ -69,9 +69,9 @@ export function FileExplorer({
       <div className="hidden h-full min-h-[28rem] w-full min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card md:flex">
         <ResizablePanelGroup orientation="horizontal" className="h-full w-full min-w-0">
           <ResizablePanel
-            defaultSize={32}
-            minSize={28}
-            maxSize={40}
+            defaultSize={320}
+            minSize={280}
+            maxSize={360}
             className="min-w-[17.5rem] shrink-0"
           >
             <div className="flex h-full w-full min-w-0 flex-col border-r border-border/60 bg-muted/20">
@@ -90,7 +90,7 @@ export function FileExplorer({
             </div>
           </ResizablePanel>
           <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={68} minSize={60} className="min-w-0 flex-1">
+          <ResizablePanel minSize={320} className="min-w-0 flex-1">
             <div className="h-full min-w-0 overflow-hidden bg-background">
               {activePath ? (
                 <FileViewer
