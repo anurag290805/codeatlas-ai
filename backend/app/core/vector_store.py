@@ -11,14 +11,8 @@ different vector database (Pinecone, Weaviate, Qdrant, Milvus, etc.) should
 require changes only within this module: concrete storage engines implement
 ``AbstractVectorStore``, and the rest of the backend depends exclusively on
 ``VectorStoreService``.
-
-The PostgreSQL-backed implementation uses pgvector for similarity search with
-ONE shared table (``codeatlas_vectors``). Every row includes ``workspace_id``
-and ``repository_id`` so isolation is preserved at query time.
-
-The ``pgvector`` extension must be enabled:
-    CREATE EXTENSION IF NOT EXISTS vector;
 """
+
 from __future__ import annotations
 
 import json
@@ -28,30 +22,34 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import (
-    create_engine, inspect, text, Column, String, Integer,
-    DateTime, Index, select, delete, func, text as sql_text, bindparam,
-)
-from sqlalchemy.orm import Mapped, mapped_column
-from app.db.database import Base
-
 from app.config import get_settings
 from app.core.embeddings import ChunkEmbedding
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Dimension is configurable via settings (embedding_dimension) and must match
-# the Gemini embedding model output (gemini-embedding-2 default 768, configurable 128-3072).
-# Read at init time to stay consistent with embeddings.
-_EMBEDDING_DIM = get_settings().embedding_dimension
-
-# Shared table for all repository embeddings. Not one table per repo.
-VECTOR_TABLE_NAME = "codeatlas_vectors"
-
+# Collection name prefix applied to every repository-scoped collection. This
+# keeps the naming strategy scalable and namespaced as new collection types
+# (e.g. cross-repository indexes) are introduced in the future.
+#
+# ChromaDB rejects collection names longer than 63 characters (and only
+# allows alphanumerics, underscores, and hyphens). Every component below is
+# sized so a fully qualified name -- including the staged-generation suffix
+# appended by ``stage_embeddings`` -- always stays well under that limit.
 _COLLECTION_NAME_PREFIX = "codeatlas"
+# Length of the per-workspace namespace hash embedded in each collection name.
+# 9 hex characters (36 bits) is enough to isolate workspaces while keeping
+# the qualified name short. A 10-char namespace pushes the fully qualified
+# staged name (with 32-char UUID suffix) to 64 chars, exceeding ChromaDB's
+# 63-char limit. 9 chars brings it to exactly 63.
 _NAMESPACE_HASH_LENGTH = 9
+
+# Metadata key used to store non-scalar chunk metadata as a JSON string,
+# since most vector database backends only accept flat scalar metadata.
 _METADATA_JSON_KEY = "metadata_json"
+
+# Reserved metadata keys with dedicated storage fields. These are excluded
+# from the JSON-encoded metadata blob to avoid duplication.
 _RESERVED_METADATA_KEYS = frozenset(
     {
         "repository_id",
@@ -66,29 +64,39 @@ _RESERVED_METADATA_KEYS = frozenset(
     }
 )
 
+
 class VectorStoreError(Exception):
-    pass
+    """Base exception for all vector storage failures."""
+
 
 class UnsupportedVectorStoreError(VectorStoreError):
-    pass
+    """Raised when the configured vector store backend is not recognized."""
+
 
 class CollectionNotFoundError(VectorStoreError):
-    pass
+    """Raised when an operation targets a collection that does not exist."""
+
 
 class VectorInsertionError(VectorStoreError):
-    pass
+    """Raised when inserting or updating vectors fails."""
+
 
 class VectorSearchError(VectorStoreError):
-    pass
+    """Raised when a similarity search fails."""
+
 
 class VectorDeletionError(VectorStoreError):
-    pass
+    """Raised when deleting vectors or a collection fails."""
+
 
 class VectorStorePersistenceError(VectorStoreError):
-    pass
+    """Raised when the underlying vector database is unavailable or corrupted."""
+
 
 @dataclass(frozen=True)
 class StoredVectorRecord:
+    """Metadata describing a single vector persisted in the vector store."""
+
     chunk_id: str
     repository_id: str
     file_path: str
@@ -99,24 +107,35 @@ class StoredVectorRecord:
     end_line: int | None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+
 @dataclass(frozen=True)
 class VectorSearchResult:
+    """A single similarity search match, ranked by relevance."""
+
     record: StoredVectorRecord
     similarity_score: float
 
+
 @dataclass(frozen=True)
 class SearchFilters:
+    """Optional constraints applied to a similarity search."""
+
     language: str | None = None
     symbol_type: str | None = None
     metadata_equals: dict[str, Any] = field(default_factory=dict)
 
+
 @dataclass(frozen=True)
 class CollectionStats:
+    """Aggregate statistics describing a repository's vector collection."""
+
     collection_name: str
     repository_id: str
     vector_count: int
 
+
 def _chunk_embedding_to_record(embedding: ChunkEmbedding) -> StoredVectorRecord:
+    """Derive the persisted metadata record for a ``ChunkEmbedding``."""
     metadata = embedding.metadata or {}
     return StoredVectorRecord(
         chunk_id=embedding.chunk_id,
@@ -130,12 +149,22 @@ def _chunk_embedding_to_record(embedding: ChunkEmbedding) -> StoredVectorRecord:
         metadata=metadata,
     )
 
+
 def _record_to_storage_metadata(record: StoredVectorRecord) -> dict[str, Any]:
+    """
+    Flatten a ``StoredVectorRecord`` into a scalar-only metadata mapping.
+
+    Vector database backends commonly restrict stored metadata to primitive
+    scalar types. Any additional, non-reserved metadata is preserved as a
+    JSON-encoded string so no information is lost.
+    """
     extra_metadata = {
-        key: value for key, value in record.metadata.items()
+        key: value
+        for key, value in record.metadata.items()
         if key not in _RESERVED_METADATA_KEYS
     }
-    return {
+
+    storage_metadata: dict[str, Any] = {
         "repository_id": record.repository_id,
         "chunk_id": record.chunk_id,
         "file_path": record.file_path,
@@ -144,20 +173,35 @@ def _record_to_storage_metadata(record: StoredVectorRecord) -> dict[str, Any]:
         "language": record.language,
         "start_line": record.start_line if record.start_line is not None else -1,
         "end_line": record.end_line if record.end_line is not None else -1,
+        # Source code is a required retrieval field and Chroma supports it
+        # as a scalar string. Store it explicitly rather than relying on the
+        # auxiliary JSON blob, which keeps the schema queryable and makes the
+        # contract with RetrieverService unambiguous.
         "code": str(record.metadata.get("code", "")),
         _METADATA_JSON_KEY: json.dumps(extra_metadata, default=str),
     }
+    return storage_metadata
 
-def _storage_metadata_to_record(chunk_id: str, storage_metadata: dict[str, Any]) -> StoredVectorRecord:
+
+def _storage_metadata_to_record(
+    chunk_id: str, storage_metadata: dict[str, Any]
+) -> StoredVectorRecord:
+    """Reconstruct a ``StoredVectorRecord`` from persisted flat metadata."""
     try:
-        decoded = json.loads(storage_metadata.get(_METADATA_JSON_KEY, "{}"))
-        extra = decoded if isinstance(decoded, dict) else {}
+        decoded_metadata = json.loads(storage_metadata.get(_METADATA_JSON_KEY, "{}"))
+        extra_metadata = decoded_metadata if isinstance(decoded_metadata, dict) else {}
     except (TypeError, json.JSONDecodeError):
-        extra = {}
+        extra_metadata = {}
+
+    # New records store code as a dedicated field. The JSON fallback preserves
+    # compatibility with any intermediate records that serialized code before
+    # the dedicated field was introduced.
     if "code" in storage_metadata:
-        extra["code"] = storage_metadata["code"]
+        extra_metadata["code"] = storage_metadata["code"]
+
     start_line = storage_metadata.get("start_line")
     end_line = storage_metadata.get("end_line")
+
     return StoredVectorRecord(
         chunk_id=chunk_id,
         repository_id=storage_metadata.get("repository_id", ""),
@@ -167,126 +211,51 @@ def _storage_metadata_to_record(chunk_id: str, storage_metadata: dict[str, Any])
         language=storage_metadata.get("language", ""),
         start_line=None if start_line in (None, -1) else int(start_line),
         end_line=None if end_line in (None, -1) else int(end_line),
-        metadata=extra,
+        metadata=extra_metadata,
     )
 
-# SQLAlchemy ORM model for the shared pgvector table
-try:
-    from pgvector.sqlalchemy import Vector
-    # Enhanced pgvector.Vector to generate extensions.vector() for PostgreSQL
-    class VectorWithExtension(Vector):
-        def get_colspec(self, **kw):
-            settings = get_settings()
-            database_url = getattr(settings, 'DATABASE_URL', '')
-            # Check if we're using PostgreSQL to reference the extensions schema
-            if database_url and database_url.startswith(("postgresql://", "postgres://")):
-                return f"extensions.vector({self.dim})"
-            else:
-                return super().get_colspec(**kw)
-
-        def bind_processor(self, dialect):
-            # Add a dialect-level processor to ensure proper type name
-            def process(value):
-                # Return the appropriate type name based on dialect
-                if dialect.name == "postgresql":
-                    return f"extensions.vector({self.dim})"
-                return super().bind_processor(dialect)(value) if hasattr(super(), 'bind_processor') else value
-            return process
-
-    Vector = VectorWithExtension
-except Exception:  # pragma: no cover
-    # Fallback if pgvector SQLAlchemy package not installed; still produces correct SQL.
-    from sqlalchemy.types import UserDefinedType
-    from app.config import get_settings
-
-    class Vector(UserDefinedType):
-        def __init__(self, dim: int = 768):
-            self.dim = dim
-            super().__init__()
-
-        def get_colspec(self, **kw):
-            settings = get_settings()
-            database_url = getattr(settings, 'DATABASE_URL', '')
-            # Check if we're using PostgreSQL to reference the extensions schema
-            if database_url and database_url.startswith(("postgresql://", "postgres://")):
-                return f"extensions.vector({self.dim})"
-            else:
-                return f"VECTOR({self.dim})"
-
-        def bind_processor(self, dialect):
-            # Add a dialect-level processor to ensure proper type name
-            def process(value):
-                # Return the appropriate type name based on dialect
-                if dialect.name == "postgresql":
-                    return f"extensions.vector({self.dim})"
-                return f"VECTOR({self.dim})"
-            return process
-
-from sqlalchemy.orm import Mapped, mapped_column
-
-# We use a declarative base aligned with the app's database module.
-class VectorRow(Base):
-    __tablename__ = VECTOR_TABLE_NAME
-    __table_args__ = (
-        Index(
-            "uq_vectors_workspace_repository_chunk",
-            "workspace_id",
-            "repository_id",
-            "chunk_id",
-            unique=True,
-        ),
-        Index("ix_vectors_workspace_repo", "workspace_id", "repository_id"),
-        Index("ix_vectors_chunk", "workspace_id", "repository_id", "chunk_id"),
-    )
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    workspace_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    repository_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    chunk_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
-    symbol_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    symbol_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    language: Mapped[str] = mapped_column(String(50), nullable=False)
-    start_line: Mapped[int] = mapped_column(Integer, nullable=True)
-    end_line: Mapped[int] = mapped_column(Integer, nullable=True)
-    code: Mapped[str] = mapped_column(String, nullable=False, default="")
-    embedding: Mapped[Any] = mapped_column(Vector(_EMBEDDING_DIM), nullable=False)
-    metadata_json: Mapped[str] = mapped_column(String, nullable=False, default="{}")
-    generation_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[Any] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class AbstractVectorStore(ABC):
+    """
+    Abstract interface for a vector database backend.
+
+    Implementations are responsible only for persistence and retrieval
+    mechanics against a specific vector database engine. They must not
+    contain repository-naming policy or application-level orchestration;
+    that responsibility belongs to ``VectorStoreService``.
+    """
+
     @abstractmethod
     def create_collection(self, collection_name: str) -> None:
-        pass
+        """Create a collection if it does not already exist."""
 
     @abstractmethod
     def collection_exists(self, collection_name: str) -> bool:
-        pass
+        """Return whether ``collection_name`` currently exists."""
 
     @abstractmethod
     def delete_collection(self, collection_name: str) -> None:
-        pass
+        """Permanently delete a collection and all vectors within it."""
 
     @abstractmethod
     def reset_collection(self, collection_name: str) -> None:
-        pass
+        """Delete and immediately recreate an empty collection."""
 
     @abstractmethod
     def upsert_vectors(
-        self,
-        collection_name: str,
-        embeddings: list[ChunkEmbedding],
-        workspace_id: str | None = None,
+        self, collection_name: str, embeddings: list[ChunkEmbedding]
     ) -> int:
-        pass
+        """Insert new vectors or overwrite existing ones by chunk identifier."""
 
     @abstractmethod
     def delete_vectors(self, collection_name: str, chunk_ids: list[str]) -> int:
-        pass
+        """Delete vectors identified by ``chunk_ids``."""
 
     @abstractmethod
-    def delete_by_metadata(self, collection_name: str, field_name: str, value: str) -> int:
-        pass
+    def delete_by_metadata(
+        self, collection_name: str, field_name: str, value: str
+    ) -> int:
+        """Delete all vectors whose metadata field equals ``value``."""
 
     @abstractmethod
     def similarity_search(
@@ -295,184 +264,148 @@ class AbstractVectorStore(ABC):
         query_vector: list[float],
         top_k: int,
         filters: SearchFilters | None,
-        workspace_id: str | None = None,
     ) -> list[VectorSearchResult]:
-        pass
+        """Return the ``top_k`` vectors most similar to ``query_vector``."""
 
     @abstractmethod
     def count_vectors(self, collection_name: str) -> int:
-        pass
+        """Return the number of vectors currently stored in a collection."""
 
-class PgVectorStore(AbstractVectorStore):
-    """Shared-table pgvector backend."""
 
-    def __init__(self) -> None:
-        settings = get_settings()
-        database_url = settings.DATABASE_URL
-        if not database_url:
-            raise VectorStorePersistenceError("DATABASE_URL must be configured for pgvector backend.")
-        self._engine = create_engine(database_url, future=True)
-        # Verify pgvector genuinely exists: create extension and inspect type
-        with self._engine.begin() as conn:
-            # Only attempt pgvector extension when on PostgreSQL
-            url = database_url
-            if url.startswith(("postgresql://", "postgres://")):
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                # Real verification: query pg_extension for vector
-                result = conn.execute(text("SELECT extname FROM pg_extension WHERE extname = 'vector'")).first()
-                if result is None or result[0] != "vector":
-                    raise VectorStorePersistenceError("pgvector extension not found in PostgreSQL.")
-                # Verify similarity operator works with a real vector query
-                try:
-                    conn.execute(text("SELECT '[1,2,3]'::vector <=> '[1,2,4]'::vector"))
-                except Exception:
-                    raise VectorStorePersistenceError("pgvector similarity operator <=> not available.")
-            else:
-                logger.warning("PgVectorStore initialized with non-PostgreSQL URL (%s); pgvector checks skipped.", url.split("://")[0])
-        logger.info("PgVectorStore initialized with database_url=%s", database_url.replace("://", "://***@"))
+class ChromaVectorStore(AbstractVectorStore):
+    """``AbstractVectorStore`` implementation backed by ChromaDB."""
 
-    def _parse_collection_name(self, collection_name: str) -> tuple[str | None, str | None]:
-        # Legacy naming: codeatlas_{namespace}_{repository_id}
-        # For shared table, extract workspace/repo from metadata or collection name.
-        # We store workspace/repo explicitly in the table, so callers must provide them.
-        return None, None
+    def __init__(self, persist_directory: str) -> None:
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
 
-    @staticmethod
-    def _repository_id_from_collection_name(collection_name: str) -> str:
-        """Resolve the repository portion of the service's namespaced key."""
-        parts = collection_name.split("_", 2)
-        if len(parts) == 3 and parts[0] == _COLLECTION_NAME_PREFIX:
-            repository_id = parts[2]
-            if repository_id:
-                return repository_id
-        return collection_name
+        persist_directory = str(persist_directory)
 
-    # For backward compatibility, treat collection_name as repository identifier.
+        try:
+            # Chroma 0.5.x still invokes its PostHog client even when the
+            # setting disables telemetry. Disable the client explicitly as a
+            # compatibility safeguard for newer posthog signatures.
+            import posthog
+
+            posthog.disabled = True
+            self._client = chromadb.PersistentClient(
+                path=persist_directory,
+                settings=ChromaSettings(anonymized_telemetry=False),
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced as a domain error
+            raise VectorStorePersistenceError(
+                f"Failed to initialize ChromaDB at '{persist_directory}'."
+            ) from exc
+
+        logger.info("ChromaDB client initialized at '%s'.", persist_directory)
+
     def create_collection(self, collection_name: str) -> None:
-        # Shared table is created once; nothing per-collection.
-        with self._engine.begin() as conn:
-            conn.execute(text(f"CREATE TABLE IF NOT EXISTS {VECTOR_TABLE_NAME} ("+
-                "id SERIAL PRIMARY KEY," +
-                "workspace_id VARCHAR(128)," +
-                "repository_id VARCHAR(255) NOT NULL," +
-                "chunk_id VARCHAR(255) NOT NULL," +
-                "file_path VARCHAR(1024) NOT NULL," +
-                "symbol_name VARCHAR(255)," +
-                "symbol_type VARCHAR(100)," +
-                "language VARCHAR(50) NOT NULL," +
-                "start_line INTEGER," +
-                "end_line INTEGER," +
-                "code TEXT NOT NULL DEFAULT ''," +
-                "embedding extensions.vector(" + str(_EMBEDDING_DIM) + ") NOT NULL," +
-                "metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb," +
-                "generation_version INTEGER," +
-                "created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()" +
-                ")"))
-            conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_vectors_workspace_repo ON {VECTOR_TABLE_NAME} (workspace_id, repository_id)"))
-            conn.execute(text(
-                f"CREATE UNIQUE INDEX IF NOT EXISTS uq_vectors_workspace_repository_chunk "
-                f"ON {VECTOR_TABLE_NAME} (workspace_id, repository_id, chunk_id)"
-            ))
-        logger.info("Shared vector table '%s' ready.", VECTOR_TABLE_NAME)
+        try:
+            self._client.get_or_create_collection(name=collection_name)
+        except Exception as exc:
+            logger.exception("Chroma collection creation failed")
+            raise
+        logger.info("Collection '%s' is ready.", collection_name)
 
     def collection_exists(self, collection_name: str) -> bool:
-        inspector = inspect(self._engine)
-        return inspector.has_table(VECTOR_TABLE_NAME)
+        try:
+            existing = {c.name for c in self._client.list_collections()}
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStorePersistenceError(
+                "Failed to list ChromaDB collections."
+            ) from exc
+        return collection_name in existing
 
     def delete_collection(self, collection_name: str) -> None:
-        # Never drop the shared table; instead delete by repository scope if needed.
-        logger.info("delete_collection called for '%s' on shared table - no-op.", collection_name)
+        if not self.collection_exists(collection_name):
+            raise CollectionNotFoundError(
+                f"Collection '{collection_name}' does not exist."
+            )
+        try:
+            self._client.delete_collection(name=collection_name)
+        except Exception as exc:  # noqa: BLE001
+            raise VectorDeletionError(
+                f"Failed to delete collection '{collection_name}'."
+            ) from exc
+        logger.info("Collection '%s' deleted.", collection_name)
 
     def reset_collection(self, collection_name: str) -> None:
-        # In shared-table design, reset is a targeted delete by repository.
-        # For compatibility we log and skip destructive global reset.
-        logger.info("reset_collection on shared table '%s' - no-op to preserve isolation.", collection_name)
+        if self.collection_exists(collection_name):
+            self.delete_collection(collection_name)
+        self.create_collection(collection_name)
+        logger.info("Collection '%s' reset.", collection_name)
 
     def upsert_vectors(
-        self,
-        collection_name: str,
-        embeddings: list[ChunkEmbedding],
-        workspace_id: str | None = None,
+        self, collection_name: str, embeddings: list[ChunkEmbedding]
     ) -> int:
         if not embeddings:
             return 0
-        repository_id = embeddings[0].repository_id
-        with self._engine.begin() as conn:
-            for emb in embeddings:
-                record = _chunk_embedding_to_record(emb)
-                meta = _record_to_storage_metadata(record)
-                # Insert/update by chunk+repo+workspace. For shared table, use chunk_id+repository_id as key.
-                conn.execute(
-                    text(f"""
-                    INSERT INTO {VECTOR_TABLE_NAME}
-                    (workspace_id, repository_id, chunk_id, file_path, symbol_name,
-                     symbol_type, language, start_line, end_line, code, embedding,
-                     metadata_json, generation_version, created_at)
-                    VALUES
-                    (:workspace_id, :repository_id, :chunk_id, :file_path, :symbol_name,
-                     :symbol_type, :language, :start_line, :end_line, :code,
-                     :embedding, :metadata_json, :generation_version, NOW())
-                    ON CONFLICT (workspace_id, repository_id, chunk_id) DO UPDATE SET
-                        file_path = EXCLUDED.file_path,
-                        symbol_name = EXCLUDED.symbol_name,
-                        symbol_type = EXCLUDED.symbol_type,
-                        language = EXCLUDED.language,
-                        start_line = EXCLUDED.start_line,
-                        end_line = EXCLUDED.end_line,
-                        code = EXCLUDED.code,
-                        embedding = EXCLUDED.embedding,
-                        metadata_json = EXCLUDED.metadata_json,
-                        generation_version = COALESCE(EXCLUDED.generation_version, {VECTOR_TABLE_NAME}.generation_version),
-                        created_at = NOW()
-                    """)
-                    .bindparams(
-                        workspace_id=workspace_id,
-                        repository_id=record.repository_id,
-                        chunk_id=record.chunk_id,
-                        file_path=record.file_path,
-                        symbol_name=record.symbol_name,
-                        symbol_type=record.symbol_type,
-                        language=record.language,
-                        start_line=record.start_line,
-                        end_line=record.end_line,
-                        code=meta["code"],
-                        embedding=emb.vector.tolist(),
-                        metadata_json=meta[_METADATA_JSON_KEY],
-                        generation_version=None,
-                    )
-                )
-        logger.info("Upserted %d vector(s) into shared table for repo '%s'.", len(embeddings), repository_id)
+
+        collection = self._get_collection(collection_name)
+        records = [_chunk_embedding_to_record(embedding) for embedding in embeddings]
+
+        try:
+            collection.upsert(
+                ids=[record.chunk_id for record in records],
+                embeddings=[embedding.vector for embedding in embeddings],
+                metadatas=[_record_to_storage_metadata(record) for record in records],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise VectorInsertionError(
+                f"Failed to upsert {len(embeddings)} vector(s) into "
+                f"collection '{collection_name}'."
+            ) from exc
+
+        logger.info(
+            "Upserted %d vector(s) into collection '%s'.",
+            len(embeddings),
+            collection_name,
+        )
         return len(embeddings)
 
     def delete_vectors(self, collection_name: str, chunk_ids: list[str]) -> int:
         if not chunk_ids:
             return 0
-        # Extract repository from collection name; for shared table delete scoped by repository
-        repo_part = collection_name
-        workspace_id = None
-        with self._engine.begin() as conn:
-            for cid in chunk_ids:
-                conn.execute(
-                    text(f"DELETE FROM {VECTOR_TABLE_NAME} WHERE workspace_id = :wid AND repository_id = :rid AND chunk_id = :cid")
-                    .bindparams(wid=workspace_id, rid=repo_part, cid=cid)
-                )
+
+        collection = self._get_collection(collection_name)
+        try:
+            collection.delete(ids=chunk_ids)
+        except Exception as exc:  # noqa: BLE001
+            raise VectorDeletionError(
+                f"Failed to delete {len(chunk_ids)} vector(s) from "
+                f"collection '{collection_name}'."
+            ) from exc
+
+        logger.info(
+            "Deleted %d vector(s) from collection '%s'.",
+            len(chunk_ids),
+            collection_name,
+        )
         return len(chunk_ids)
 
-    def delete_by_metadata(self, collection_name: str, field_name: str, value: str) -> int:
-        repo_part = collection_name
-        workspace_id = None
-        with self._engine.begin() as conn:
-            result = conn.execute(
-                text(f"SELECT chunk_id FROM {VECTOR_TABLE_NAME} WHERE workspace_id = :wid AND repository_id = :rid AND metadata_json->>:key = :val")
-                .bindparams(wid=workspace_id, rid=repo_part, key=field_name, val=value)
-            )
-            matched = [row[0] for row in result.fetchall()]
-            for cid in matched:
-                conn.execute(
-                    text(f"DELETE FROM {VECTOR_TABLE_NAME} WHERE workspace_id = :wid AND repository_id = :rid AND chunk_id = :cid")
-                    .bindparams(wid=workspace_id, rid=repo_part, cid=cid)
-                )
-        return len(matched)
+    def delete_by_metadata(
+        self, collection_name: str, field_name: str, value: str
+    ) -> int:
+        collection = self._get_collection(collection_name)
+        try:
+            matches = collection.get(where={field_name: value})
+            matched_ids = matches.get("ids", [])
+            if matched_ids:
+                collection.delete(ids=matched_ids)
+        except Exception as exc:  # noqa: BLE001
+            raise VectorDeletionError(
+                f"Failed to delete vectors where '{field_name}' == '{value}' "
+                f"from collection '{collection_name}'."
+            ) from exc
+
+        logger.info(
+            "Deleted %d vector(s) from collection '%s' where %s == '%s'.",
+            len(matched_ids),
+            collection_name,
+            field_name,
+            value,
+        )
+        return len(matched_ids)
 
     def similarity_search(
         self,
@@ -480,111 +413,145 @@ class PgVectorStore(AbstractVectorStore):
         query_vector: list[float],
         top_k: int,
         filters: SearchFilters | None,
-        workspace_id: str | None = None,
     ) -> list[VectorSearchResult]:
-        repo_part = self._repository_id_from_collection_name(collection_name)
-        params: dict[str, Any] = {"query_vector": query_vector, "top_k": top_k}
-        conditions = ["workspace_id IS NOT DISTINCT FROM :wid", "repository_id = :rid"]
-        params["wid"] = workspace_id
-        params["rid"] = repo_part
-        if filters:
-            if filters.language:
-                conditions.append("language = :lang")
-                params["lang"] = filters.language
-            if filters.symbol_type:
-                conditions.append("symbol_type = :symbol_type")
-                params["symbol_type"] = filters.symbol_type
-            if filters.metadata_equals:
-                for k, v in filters.metadata_equals.items():
-                    conditions.append(f"metadata_json->>:key_{k} = :val_{k}")
-                    params[f"key_{k}"] = k
-                    params[f"val_{k}"] = v
-        where_clause = "WHERE " + " AND ".join(conditions)
-        # Use cosine similarity via pgvector <=> operator
-        query_text = f"""
-        SELECT chunk_id, repository_id, file_path, symbol_name, symbol_type,
-               language, start_line, end_line, code, metadata_json,
-               (1 - (embedding <=> :query_vector)) AS cosine_similarity
-        FROM {VECTOR_TABLE_NAME}
-        {where_clause}
-        ORDER BY embedding <=> :query_vector
-        LIMIT :top_k
-        """
-        statement = text(query_text).bindparams(
-            bindparam("query_vector", type_=Vector(_EMBEDDING_DIM)),
-            bindparam("top_k", type_=Integer),
-        )
-        with self._engine.begin() as conn:
-            result = conn.execute(statement, params)
-            results = []
-            for row in result.fetchall():
-                chunk_id, repo_id, file_path, sym_name, sym_type, language, start_line, end_line, code, meta_json_str, score = row
-                # Reconstruct StoredVectorRecord
-                extra_meta = {}
-                try:
-                    extra_meta = json.loads(meta_json_str) if meta_json_str else {}
-                    if isinstance(extra_meta, dict) and "code" not in extra_meta and code:
-                        extra_meta["code"] = code
-                except Exception:
-                    pass
-                record = StoredVectorRecord(
-                    chunk_id=str(chunk_id),
-                    repository_id=str(repo_id),
-                    file_path=str(file_path) if file_path else "",
-                    symbol_name=str(sym_name) if sym_name else None,
-                    symbol_type=str(sym_type) if sym_type else None,
-                    language=str(language) if language else "",
-                    start_line=int(start_line) if start_line is not None else None,
-                    end_line=int(end_line) if end_line is not None else None,
-                    metadata=extra_meta,
-                )
-                results.append(VectorSearchResult(record=record, similarity_score=float(score) if score is not None else 0.0))
-        return results
+        collection = self._get_collection(collection_name)
+        where_clause = _build_where_clause(filters)
+
+        try:
+            response = collection.query(
+                query_embeddings=[query_vector],
+                n_results=top_k,
+                where=where_clause if where_clause else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise VectorSearchError(
+                f"Similarity search failed against collection '{collection_name}'."
+            ) from exc
+
+        return _parse_query_response(response)
 
     def count_vectors(self, collection_name: str) -> int:
-        repo_part = collection_name
-        workspace_id = None
-        with self._engine.begin() as conn:
-            result = conn.execute(
-                text(f"SELECT COUNT(*) FROM {VECTOR_TABLE_NAME} WHERE workspace_id IS NOT DISTINCT FROM :wid AND repository_id = :rid")
-                .bindparams(wid=workspace_id, rid=repo_part)
-            )
-            return int(result.scalar() or 0)
+        collection = self._get_collection(collection_name)
+        try:
+            return collection.count()
+        except Exception as exc:  # noqa: BLE001
+            raise VectorStorePersistenceError(
+                f"Failed to count vectors in collection '{collection_name}'."
+            ) from exc
+
+    def _get_collection(self, collection_name: str):
+        try:
+            return self._client.get_collection(name=collection_name)
+        except Exception as exc:  # noqa: BLE001
+            raise CollectionNotFoundError(
+                f"Collection '{collection_name}' does not exist."
+            ) from exc
+
+
+def _build_where_clause(filters: SearchFilters | None) -> dict[str, Any]:
+    """Translate ``SearchFilters`` into a ChromaDB ``where`` clause."""
+    if filters is None:
+        return {}
+
+    conditions: dict[str, Any] = {}
+    if filters.language:
+        conditions["language"] = filters.language
+    if filters.symbol_type:
+        conditions["symbol_type"] = filters.symbol_type
+    conditions.update(filters.metadata_equals)
+
+    if len(conditions) <= 1:
+        return conditions
+    return {"$and": [{key: value} for key, value in conditions.items()]}
+
+
+def _parse_query_response(response: dict[str, Any]) -> list[VectorSearchResult]:
+    """Convert a raw ChromaDB query response into ``VectorSearchResult`` objects."""
+    ids = (response.get("ids") or [[]])[0]
+    metadatas = (response.get("metadatas") or [[]])[0]
+    distances = (response.get("distances") or [[]])[0]
+
+    results: list[VectorSearchResult] = []
+    for chunk_id, metadata, distance in zip(ids, metadatas, distances, strict=True):
+        record = _storage_metadata_to_record(chunk_id, metadata or {})
+        # ChromaDB's default space is squared-L2 distance; convert to a
+        # similarity score in a stable, human-interpretable direction where
+        # higher values indicate greater similarity.
+        similarity_score = 1.0 / (1.0 + distance)
+        results.append(VectorSearchResult(record=record, similarity_score=similarity_score))
+
+    return results
 
 
 def _create_vector_store(backend_name: str, persist_directory: str) -> AbstractVectorStore:
+    """Instantiate the vector store backend identified by ``backend_name``."""
     normalized = backend_name.strip().lower()
-    if normalized == "pgvector":
-        return PgVectorStore()
-    raise UnsupportedVectorStoreError(f"Vector store backend '{backend_name}' is not supported.")
+
+    if normalized == "chroma":
+        return ChromaVectorStore(persist_directory=persist_directory)
+
+    raise UnsupportedVectorStoreError(
+        f"Vector store backend '{backend_name}' is not supported."
+    )
+
 
 class VectorStoreService:
-    """Public interface for all vector persistence and retrieval."""
+    """
+    Public interface for all vector persistence and retrieval operations.
+
+    This is the only vector-storage type the rest of the backend should
+    depend on. It owns the repository-to-collection naming strategy and
+    delegates all persistence mechanics to an injected ``AbstractVectorStore``.
+    """
 
     def __init__(self, store: AbstractVectorStore | None = None) -> None:
+        """
+        Args:
+            store: An explicit ``AbstractVectorStore`` to use. When omitted,
+                a store is constructed from application configuration.
+        """
         self._store = store or self._build_store_from_settings()
 
     @staticmethod
     def _build_store_from_settings() -> AbstractVectorStore:
         settings = get_settings()
         return _create_vector_store(
-            backend_name=getattr(settings, "vector_store_backend", "pgvector"),
+            backend_name=getattr(settings, "vector_store_backend", "chroma"),
             persist_directory=settings.chroma_persist_directory,
         )
 
     @staticmethod
     def _collection_name_for(repository_id: str, workspace_id: str | None = None) -> str:
+        """Derive the collection name for a repository's isolated index.
+
+        Total length must stay under ChromaDB's 63-char limit. The pattern is:
+        codeatlas_{10-char-ns}_{repo_id}_{staged-suffix}
+        Where staged-suffix is appended by ``stage_embeddings`` (32-char hex UUID).
+        Max: 8 + 1 + 10 + 1 + 10 (repo_id) + 1 + 32 = 63 chars exactly.
+        """
         namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
         return f"{_COLLECTION_NAME_PREFIX}_{namespace}_{repository_id}"
 
     def _active_collection_name(self, repository_id: str, workspace_id: str | None = None) -> str:
+        """Resolve the durable collection pointer, with legacy-name fallback."""
+        settings = get_settings()
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
+        pointer = settings.chroma_persist_directory / f"active_{namespace}_{repository_id}.json"
+        try:
+            payload = json.loads(pointer.read_text(encoding="utf-8"))
+            name = str(payload.get("collection", ""))
+            if name and self._store.collection_exists(name):
+                return name
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
         return self._collection_name_for(repository_id, workspace_id)
 
     def stage_embeddings(self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None) -> str:
+        """Write a complete new generation without touching the active index."""
         collection_name = f"{self._collection_name_for(repository_id, workspace_id)}_{uuid.uuid4().hex}"
         self._store.create_collection(collection_name)
         try:
-            self._store.upsert_vectors(collection_name, embeddings, workspace_id)
+            self._store.upsert_vectors(collection_name, embeddings)
         except Exception:
             try:
                 self._store.delete_collection(collection_name)
@@ -594,65 +561,147 @@ class VectorStoreService:
         return collection_name
 
     def publish_staged_collection(self, repository_id: str, collection_name: str, workspace_id: str | None = None) -> None:
-        # For shared table, publish means updating generation_version on rows.
-        repo_part = self._collection_name_for(repository_id, workspace_id)
-        # We use the collection_name (staged suffix) to derive what was staged,
-        # but in shared-table design the staged rows are already in the table.
-        # Preserve behavior: log publication.
-        logger.info("Published vector generation repository_id=%s collection=%s workspace_id=%s", repository_id, collection_name, workspace_id)
-        # If needed, set generation_version to a new value; but without explicit version tracking for now, just log.
+        """Publish a staged generation by atomically replacing its pointer."""
+        settings = get_settings()
+        settings.chroma_persist_directory.mkdir(parents=True, exist_ok=True)
+        namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
+        pointer = settings.chroma_persist_directory / f"active_{namespace}_{repository_id}.json"
+        old_name = self._active_collection_name(repository_id, workspace_id)
+        temporary = pointer.with_suffix(f".json.tmp-{uuid.uuid4().hex}")
+        temporary.write_text(json.dumps({"collection": collection_name}), encoding="utf-8")
+        temporary.replace(pointer)
+        if old_name != collection_name and self._store.collection_exists(old_name):
+            self._store.delete_collection(old_name)
+        logger.info("Published vector generation repository_id=%s collection=%s", repository_id, collection_name)
 
     def discard_staged_collection(self, collection_name: str) -> None:
+        """Remove only a staged collection."""
         if self._store.collection_exists(collection_name):
-            # In shared table, we can't drop just one repo's rows by table drop.
-            # For compatibility, skip destructive action; instead delete by repository derived from name.
-            # Extract repo part after prefix/namespace.
-            # This is a safe no-op for shared table; real deletion is handled by delete_repository.
-            pass
+            self._store.delete_collection(collection_name)
 
     def ensure_repository_collection(self, repository_id: str, workspace_id: str | None = None) -> None:
+        """Create the repository's collection if it does not already exist."""
         self._store.create_collection(self._collection_name_for(repository_id, workspace_id))
 
     def repository_collection_exists(self, repository_id: str, workspace_id: str | None = None) -> bool:
+        """Return whether a collection exists for ``repository_id``."""
         return self._store.collection_exists(self._active_collection_name(repository_id, workspace_id))
 
-    def index_embeddings(self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None) -> int:
+    def index_embeddings(
+        self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None
+    ) -> int:
+        """
+        Persist a batch of embeddings for a repository.
+
+        Insertion is idempotent: embeddings sharing a chunk identifier with
+        an existing vector overwrite that vector rather than duplicating it,
+        making this method safe to call for both initial indexing and
+        re-indexing after a repository update.
+
+        Args:
+            repository_id: Identifier of the repository being indexed.
+            embeddings: Embeddings produced by ``EmbeddingService``.
+
+        Returns:
+            The number of vectors written.
+        """
         if not embeddings:
-            logger.warning("index_embeddings called with no embeddings for repository '%s'.", repository_id)
+            logger.warning(
+                "index_embeddings called with no embeddings for repository '%s'.",
+                repository_id,
+            )
             return 0
+
         collection_name = self._active_collection_name(repository_id, workspace_id)
         self.ensure_repository_collection(repository_id, workspace_id)
-        return self._store.upsert_vectors(collection_name, embeddings, workspace_id)
+        return self._store.upsert_vectors(collection_name, embeddings)
 
-    def update_embeddings(self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None) -> int:
+    def update_embeddings(
+        self, repository_id: str, embeddings: list[ChunkEmbedding], workspace_id: str | None = None
+    ) -> int:
+        """
+        Update previously indexed embeddings for a repository.
+
+        This is functionally identical to ``index_embeddings`` since
+        insertion is idempotent; the distinct name documents intent at
+        call sites that re-index modified files.
+        """
         return self.index_embeddings(repository_id, embeddings, workspace_id)
 
-    def search(self, repository_id: str, query_vector: list[float], top_k: int = 10, filters: SearchFilters | None = None, workspace_id: str | None = None) -> list[VectorSearchResult]:
+    def search(
+        self,
+        repository_id: str,
+        query_vector: list[float],
+        top_k: int = 10,
+        filters: SearchFilters | None = None, workspace_id: str | None = None,
+    ) -> list[VectorSearchResult]:
+        """
+        Perform a similarity search scoped to a single repository.
+
+        Args:
+            repository_id: Repository whose collection should be searched.
+            query_vector: The embedding vector to search against.
+            top_k: Maximum number of results to return.
+            filters: Optional language, symbol-type, or metadata constraints.
+
+        Returns:
+            Ranked ``VectorSearchResult`` objects, most similar first.
+
+        Raises:
+            CollectionNotFoundError: If the repository has not been indexed.
+            VectorSearchError: If the underlying search fails.
+        """
         if top_k <= 0:
             raise VectorSearchError("top_k must be a positive integer.")
+
         collection_name = self._active_collection_name(repository_id, workspace_id)
-        logger.info("Running similarity search on repository '%s' (top_k=%d workspace=%s).", repository_id, top_k, workspace_id)
-        return self._store.similarity_search(collection_name, query_vector, top_k, filters, workspace_id)
+        logger.info(
+            "Running similarity search on repository '%s' (top_k=%d).",
+            repository_id,
+            top_k,
+        )
+        return self._store.similarity_search(
+            collection_name, query_vector, top_k, filters
+        )
 
     def delete_chunk(self, repository_id: str, chunk_id: str) -> None:
+        """Delete a single chunk's vector from a repository's collection."""
         self.delete_chunks(repository_id, [chunk_id])
 
     def delete_chunks(self, repository_id: str, chunk_ids: list[str]) -> int:
+        """Delete a batch of chunk vectors from a repository's collection."""
         collection_name = self._active_collection_name(repository_id)
         return self._store.delete_vectors(collection_name, chunk_ids)
 
     def delete_repository(self, repository_id: str, workspace_id: str | None = None) -> None:
+        """
+        Permanently delete a repository's entire vector collection.
+
+        This is a no-op, logged at warning level, if the repository has no
+        existing collection rather than raising an error, since callers
+        frequently invoke this as part of idempotent cleanup routines.
+        """
         collection_name = self._active_collection_name(repository_id, workspace_id)
         if not self._store.collection_exists(collection_name):
-            logger.warning("delete_repository called for '%s' but no collection exists.", repository_id)
+            logger.warning(
+                "delete_repository called for '%s' but no collection exists.",
+                repository_id,
+            )
             return
         self._store.delete_collection(collection_name)
+        try:
+            namespace = hashlib.sha256(workspace_id.encode()).hexdigest()[:_NAMESPACE_HASH_LENGTH] if workspace_id else "legacy"
+            (get_settings().chroma_persist_directory / f"active_{namespace}_{repository_id}.json").unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to remove active collection pointer repository_id=%s", repository_id)
 
     def clear_repository(self, repository_id: str) -> None:
+        """Remove all vectors for a repository while keeping its collection."""
         collection_name = self._collection_name_for(repository_id)
         self._store.reset_collection(collection_name)
 
     def get_repository_stats(self, repository_id: str, workspace_id: str | None = None) -> CollectionStats:
+        """Return vector count statistics for a repository's collection."""
         collection_name = self._active_collection_name(repository_id, workspace_id)
         vector_count = self._store.count_vectors(collection_name)
         return CollectionStats(
@@ -661,10 +710,15 @@ class VectorStoreService:
             vector_count=vector_count,
         )
 
-    def upsert_embeddings(self, repository_id: str, chunks: list[Any], embeddings: Any) -> int:
+    # Compatibility names used by the repository indexing routes.
+    def upsert_embeddings(
+        self, repository_id: str, chunks: list[Any], embeddings: Any
+    ) -> int:
+        """Persist embeddings produced by either embedding service contract."""
         if hasattr(embeddings, "embeddings"):
             embeddings = embeddings.embeddings
         return self.index_embeddings(repository_id, list(embeddings or []))
 
     def delete_repository_embeddings(self, repository_id: str, workspace_id: str | None = None) -> None:
+        """Compatibility alias for deleting a repository collection."""
         self.delete_repository(repository_id, workspace_id)

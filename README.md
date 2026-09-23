@@ -190,8 +190,7 @@ Config resolution order: repository-root `.env` → `backend/.env` (wins on conf
 > 🔒 Never commit `.env` files, credentials, databases, vector stores, or model caches.
 
 For Render, configure the Supabase PostgreSQL connection string as the backend
-service's `DATABASE_URL` environment variable and enable the `vector` extension
-in Supabase. The backend selects PostgreSQL whenever that variable is set to a
+service's `DATABASE_URL` environment variable. The backend selects PostgreSQL whenever that variable is set to a
 PostgreSQL URL; otherwise it uses the local SQLite file. Startup only creates
 missing tables and checks connectivity—it does not reset or overwrite existing
 production data. Repository records, indexing metadata, and vectors therefore
@@ -214,8 +213,8 @@ For Render, use the backend root directory (`backend`), build with
 `uvicorn app.main:app --host 0.0.0.0 --port $PORT`. Set `GEMINI_API_KEY`,
 `GEMINI_MODEL`, `WORKSPACE_SESSION_SECRET`, and a production
 `CORS_ALLOWED_ORIGINS` containing the exact deployed frontend origin. Keep all
-Gemini variables on the backend service only. Embeddings use the configured
-Gemini provider and vectors use Supabase pgvector.
+Gemini variables on the backend service only. ChromaDB remains the active vector
+backend and persists vectors under `CHROMA_DB_PATH`.
 
 The Render Free filesystem is ephemeral. Repository clones are intentionally
 used as a disposable working cache: an import can clone and index a public

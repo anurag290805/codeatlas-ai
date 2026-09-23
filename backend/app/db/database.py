@@ -16,7 +16,7 @@ managed PostgreSQL database instead of the ephemeral application disk.
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, create_engine, inspect, text, event
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -64,31 +64,6 @@ def _create_database_engine() -> Engine:
     backend = "SQLite" if is_sqlite else "PostgreSQL"
     logger.info("Creating SQLAlchemy engine backend=%s", backend)
     engine = create_engine(database_url, **engine_options)
-
-    # Set PostgreSQL search_path so extension types (pgvector) resolve correctly
-    if not is_sqlite:
-        @event.listens_for(engine, "connect")
-        def _set_search_path(dbapi_conn, connection_record):
-            cursor = dbapi_conn.cursor()
-            try:
-                cursor.execute("SET search_path TO public, extensions")
-            finally:
-                cursor.close()
-
-        @event.listens_for(engine, "connect")
-        def _verify_search_path(dbapi_conn, connection_record):
-            cursor = dbapi_conn.cursor()
-            try:
-                cursor.execute("SHOW search_path")
-                row = cursor.fetchone()
-                if row:
-                    path = str(row[0])
-                    if "extensions" not in path:
-                        logger.warning("PostgreSQL search_path missing extensions: %s", path)
-                    else:
-                        logger.info("PostgreSQL search_path verified: %s", path)
-            finally:
-                cursor.close()
 
     return engine
 
@@ -179,7 +154,6 @@ def initialize_database() -> None:
         # router import order when this function is called from a script or
         # test suite.
         from app.models import db_models  # noqa: F401
-        from app.core.vector_store import VectorRow  # noqa: F401
 
         logger.info("Ensuring database schema exists without modifying existing data.")
         Base.metadata.create_all(bind=engine)

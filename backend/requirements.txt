@@ -5,8 +5,6 @@ uvicorn==0.34.0
 sqlalchemy==2.0.36
 # SQLAlchemy's PostgreSQL driver for Render DATABASE_URL connections.
 psycopg[binary]==3.2.3
-# SQLAlchemy type/bind support for Supabase's pgvector extension.
-pgvector==0.3.6
 pydantic==2.10.4
 pydantic-settings==2.7.1
 python-dotenv==1.0.1
